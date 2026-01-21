@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统管理 - FeatherTrace</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i class="bi bi-feather me-2"></i> FeatherTrace
+            </a>
+            <div class="collapse navbar-collapse justify-content-end">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/admin"><i class="bi bi-gear-fill"></i> 系统管理</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <h2 class="mb-4">系统管理控制台</h2>
+                
+                <!-- System Status Card -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-activity"></i> 系统状态
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-md-4">
+                                <h3>{{ stats.total_photos }}</h3>
+                                <p class="text-muted">已处理照片</p>
+                            </div>
+                            <div class="col-md-4">
+                                <h3>{{ stats.total_species }}</h3>
+                                <p class="text-muted">识别物种数</p>
+                            </div>
+                            <div class="col-md-4">
+                                <h3>{{ stats.storage_usage }}</h3>
+                                <p class="text-muted">占用空间 (MB)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="card border-danger shadow-sm">
+                    <div class="card-header bg-danger text-white">
+                        <i class="bi bi-exclamation-triangle-fill"></i> 危险操作区
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">重置系统数据</h5>
+                        <p class="card-text text-muted">
+                            如果您遇到以下问题，可以尝试重置系统：
+                            <ul>
+                                <li>原图/裁切图切换按钮不可用（灰色）</li>
+                                <li>数据库与文件不一致</li>
+                                <li>想重新运行流水线并启用去重功能</li>
+                            </ul>
+                            <strong class="text-danger">警告：此操作将永久删除所有已处理的照片、数据库记录和人工标注！原始照片（data/raw）不会被删除。</strong>
+                        </p>
+                        <button class="btn btn-outline-danger" onclick="confirmReset()">
+                            <i class="bi bi-trash"></i> 彻底重置系统 (清空处理结果 & DB)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">确认高危操作</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>您确定要删除所有已归档的照片和数据库记录吗？</p>
+                    <p>请输入 <strong>DELETE</strong> 以确认。</p>
+                    <input type="text" class="form-control" id="confirmInput" placeholder="DELETE">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="btnConfirmDelete" disabled onclick="executeReset()">确认重置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const input = document.getElementById('confirmInput');
+        const btn = document.getElementById('btnConfirmDelete');
+
+        function confirmReset() {
+            input.value = '';
+            btn.disabled = true;
+            modal.show();
+        }
+
+        input.addEventListener('input', (e) => {
+            btn.disabled = e.target.value !== 'DELETE';
+        });
+
+        function executeReset() {
+            fetch('/api/admin/reset', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('系统已重置。请重新运行流水线脚本。');
+                        window.location.reload();
+                    } else {
+                        alert('重置失败: ' + data.detail);
+                    }
+                })
+                .catch(err => alert('网络错误'));
+        }
+    </script>
+</body>
+</html>

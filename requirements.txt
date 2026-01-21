@@ -1,0 +1,14 @@
+ultralytics
+opencv-python
+Pillow
+transformers
+torch
+requests
+PyExifTool
+fastapi
+uvicorn
+jinja2
+python-multipart
+sqlalchemy
+pandas
+pyyaml
