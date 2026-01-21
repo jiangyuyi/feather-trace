@@ -13,14 +13,17 @@ from src.core.detector import BirdDetector
 from src.core.quality import QualityChecker
 from src.core.processor import ImageProcessor
 from src.recognition.inference_local import LocalBirdRecognizer
+from src.recognition.inference_dongniao import DongniaoRecognizer
+from src.recognition.inference_api import APIBirdRecognizer
 from src.metadata.exif_writer import ExifWriter
+from src.utils.config_loader import load_config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class FeatherTracePipeline:
-    def __init__(self, config_path: str):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+    def __init__(self, config_path: str = "config/settings.yaml"):
+        # Use centralized config loader
+        self.config = load_config(config_path)
         
         self.db = IOCManager(self.config['paths']['db_path'])
         self.device = self.config['processing'].get('device', 'cpu')
@@ -32,8 +35,38 @@ class FeatherTracePipeline:
         self.recognizer = None # Lazy load later
         self.exif_writer = ExifWriter()
         
-        # Load taxonomy for candidate labels
-        self.taxonomy_labels = self._get_taxonomy_labels()
+        # Load taxonomy and config lists
+        self.foreign_countries = self._load_list(self.config['paths']['foreign_list'])
+        self.china_allowlist = self._load_list(self.config['paths']['china_list'])
+        self.all_labels = self._get_taxonomy_labels()
+
+    def _load_list(self, path_str):
+        path = Path(path_str)
+        if path.exists():
+            with open(path, 'r', encoding='utf-8') as f:
+                return set(line.strip() for line in f if line.strip())
+        return set()
+
+    def _calculate_file_hash(self, file_path: Path) -> str:
+        """
+        Calculate partial SHA256 hash for fast deduplication.
+        Reads first 4k + middle 4k + last 4k bytes.
+        """
+        import hashlib
+        size = file_path.stat().st_size
+        sha256 = hashlib.sha256()
+        
+        with open(file_path, 'rb') as f:
+            if size < 12288:
+                sha256.update(f.read())
+            else:
+                sha256.update(f.read(4096))
+                f.seek(size // 2)
+                sha256.update(f.read(4096))
+                f.seek(-4096, 2)
+                sha256.update(f.read(4096))
+                
+        return f"{size}_{sha256.hexdigest()}"
 
     def _get_taxonomy_labels(self):
         # Check if DB is empty
@@ -56,29 +89,38 @@ class FeatherTracePipeline:
         # Fetch all scientific names from taxonomy table
         self.db.cursor.execute("SELECT scientific_name FROM taxonomy")
         all_labels = [row[0] for row in self.db.cursor.fetchall()]
-        
-        # Check configuration for region filter
-        region = self.config.get('recognition', {}).get('region_filter')
-        
-        if region == "china":
-            allowlist_path = Path("config/china_bird_list.txt")
-            if allowlist_path.exists():
-                with open(allowlist_path, 'r', encoding='utf-8') as f:
-                    allowed_names = set(line.strip() for line in f if line.strip())
-                
-                filtered_labels = [name for name in all_labels if name in allowed_names]
-                logging.info(f"Region filter 'china' ACTIVE. Loaded {len(filtered_labels)} labels (from {len(all_labels)} total).")
-                
-                if not filtered_labels:
-                    logging.warning("Region filter resulted in 0 labels! Reverting to full list.")
-                    return all_labels
-                    
-                return filtered_labels
-            else:
-                logging.warning(f"Region filter set to 'china' but {allowlist_path} not found. Using full list.")
-        
-        logging.info(f"Loaded {len(all_labels)} labels from DB (Open-ended mode).")
+        logging.info(f"Loaded {len(all_labels)} total labels from DB.")
         return all_labels
+
+    def _select_candidate_labels(self, location_tag: str):
+        mode = self.config.get('recognition', {}).get('region_filter')
+        
+        if mode == 'china':
+            if not self.china_allowlist:
+                 logging.warning("Region filter is 'china' but china_bird_list.txt is empty/missing. Using full list.")
+                 return self.all_labels
+            return [name for name in self.all_labels if name in self.china_allowlist]
+            
+        if mode == 'auto':
+            # Check if location contains any foreign country name
+            is_foreign = False
+            for country in self.foreign_countries:
+                if country in location_tag:
+                    is_foreign = True
+                    break
+            
+            if is_foreign:
+                logging.info(f"Location '{location_tag}' identified as Foreign. Using Global list.")
+                return self.all_labels
+            else:
+                # Default to China for auto mode if not foreign
+                logging.info(f"Location '{location_tag}' identified as Domestic (or unknown). Using China list.")
+                if not self.china_allowlist:
+                    return self.all_labels
+                return [name for name in self.all_labels if name in self.china_allowlist]
+
+        # Default / Global
+        return self.all_labels
 
     def run(self):
         raw_dir = Path(self.config['paths']['raw_dir'])
@@ -103,31 +145,17 @@ class FeatherTracePipeline:
 
             logging.info(f"Processing folder: {sub_dir.name} ({location_tag})")
             
+            # Pre-calculate labels for this folder to avoid per-image overhead logic
+            folder_labels = self._select_candidate_labels(location_tag)
+            
+            if not folder_labels:
+                logging.warning("No candidate labels available! Check taxonomy/config.")
+                continue
+
             for img_path in sub_dir.glob("*.[jJ][pP][gG]"):
-                self.process_image(img_path, captured_date, location_tag, processed_dir)
+                self.process_image(img_path, captured_date, location_tag, processed_dir, folder_labels)
 
-    def _calculate_file_hash(self, file_path: Path) -> str:
-        """
-        Calculate partial SHA256 hash for fast deduplication.
-        Reads first 4k + middle 4k + last 4k bytes.
-        """
-        import hashlib
-        size = file_path.stat().st_size
-        sha256 = hashlib.sha256()
-        
-        with open(file_path, 'rb') as f:
-            if size < 12288:
-                sha256.update(f.read())
-            else:
-                sha256.update(f.read(4096))
-                f.seek(size // 2)
-                sha256.update(f.read(4096))
-                f.seek(-4096, 2)
-                sha256.update(f.read(4096))
-                
-        return f"{size}_{sha256.hexdigest()}"
-
-    def process_image(self, img_path: Path, captured_date: str, location_tag: str, processed_dir: Path):
+    def process_image(self, img_path: Path, captured_date: str, location_tag: str, processed_dir: Path, candidate_labels: list):
         logging.info(f"--- Processing {img_path.name} ---")
         
         # 0. Deduplication Check
@@ -165,9 +193,35 @@ class FeatherTracePipeline:
 
         # 4. Recognition
         if self.recognizer is None:
-            self.recognizer = LocalBirdRecognizer(device=self.device)
+            mode = self.config['recognition'].get('mode', 'local')
+            rec_config = self.config['recognition']
+            
+            if mode == 'dongniao':
+                dn_conf = rec_config.get('dongniao', {})
+                self.recognizer = DongniaoRecognizer(
+                    api_key=dn_conf.get('key'),
+                    api_url=dn_conf.get('url')
+                )
+                logging.info("Initialized Dongniao Recognizer.")
+            elif mode == 'api':
+                # Generic API (HuggingFace)
+                api_conf = rec_config.get('api', {})
+                self.recognizer = APIBirdRecognizer(
+                    api_url=api_conf.get('url'),
+                    api_key=api_conf.get('key')
+                )
+                logging.info("Initialized HuggingFace API Recognizer.")
+            else:
+                # Default to local
+                local_conf = rec_config.get('local', {})
+                model_type = local_conf.get('model_type', 'bioclip')
+                self.recognizer = LocalBirdRecognizer(
+                    model_name=model_type,
+                    device=self.device
+                )
+                logging.info(f"Initialized Local {model_type} Recognizer on {self.device}.")
         
-        results = self.recognizer.predict(str(temp_cropped), self.taxonomy_labels)
+        results = self.recognizer.predict(str(temp_cropped), candidate_labels)
         
         if not results:
             logging.warning(f"Recognition returned no results for {img_path.name}. Saving as Unknown.")
@@ -228,8 +282,6 @@ class FeatherTracePipeline:
             'width': w,
             'height': h
         })
-        
-        logging.info(f"Successfully processed and archived: {new_filename}")
         
         logging.info(f"Successfully processed and archived: {new_filename}")
 

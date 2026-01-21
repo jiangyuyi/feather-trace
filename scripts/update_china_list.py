@@ -33,8 +33,8 @@ def clean_latin_name(name):
     return f"{genus} {species}"
 
 def main():
-    source_file = Path("config/动物界-脊索动物门-2025-10626.xlsx")
-    target_file = Path("config/china_bird_list.txt")
+    source_file = Path("data/references/动物界-脊索动物门-2025-10626.xlsx")
+    target_file = Path("config/dictionaries/china_bird_list.txt")
     
     if not source_file.exists():
         print(f"Error: Source file {source_file} not found.")

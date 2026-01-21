@@ -11,3 +11,4 @@ data/models/
 .DS_Store
 *.log
 *.whl
+config/secrets.yaml

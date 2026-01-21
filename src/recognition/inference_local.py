@@ -8,36 +8,46 @@ from typing import List, Dict, Any
 import logging
 
 class LocalBirdRecognizer(BirdRecognizer):
-    def __init__(self, model_name: str = "imageomics/bioclip", device: str = None):
+    def __init__(self, model_name: str = "bioclip", device: str = None):
         if device is None or device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
             
-        logging.info(f"Loading BioCLIP model '{model_name}' on {self.device}...")
+        # Map friendly names to HF model IDs
+        model_map = {
+            "bioclip": "hf-hub:imageomics/bioclip",
+            "bioclip-2": "hf-hub:imageomics/bioclip-2"
+        }
+        
+        self.model_id = model_map.get(model_name.lower(), model_map["bioclip"])
+        self.model_type_slug = model_name.lower()
+        
+        logging.info(f"Loading {model_name} ({self.model_id}) on {self.device}...")
         
         self.cached_labels = None
         self.cached_text_features = None
 
         try:
-            self._load_model(model_name)
+            self._load_model()
         except RuntimeError as e:
             if "CUDA" in str(e) and self.device != "cpu":
                 logging.warning(f"CUDA initialization failed: {e}. Falling back to CPU.")
                 self.device = "cpu"
-                self._load_model(model_name)
+                self._load_model()
             else:
                 raise e
 
-    def _load_model(self, model_name):
+    def _load_model(self):
         import gc
         # Pre-emptive cleanup to avoid VRAM fragmentation causing spikes
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Check for local model
-        local_model_path = Path("data/models/bioclip")
+        # Check for local model in specific subfolder
+        local_model_root = Path("data/models")
+        local_model_path = local_model_root / self.model_type_slug
         
         # RTX 4060/Laptop Fix: Use fp16 for CUDA to reduce bandwidth spike/power surge
         precision = 'fp16' if self.device == 'cuda' else 'fp32'
@@ -48,42 +58,29 @@ class LocalBirdRecognizer(BirdRecognizer):
         }
 
         try:
-            if local_model_path.exists():
-                ckpt_path = local_model_path / "open_clip_pytorch_model.bin"
-                if ckpt_path.exists():
-                    logging.info(f"Loading from local checkpoint: {ckpt_path} (Precision: {precision})")
-                    self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                        'ViT-B-16', 
-                        pretrained=str(ckpt_path),
-                        **kwargs
-                    )
-                else:
-                    logging.warning(f"Local checkpoint not found at {ckpt_path}, trying hub load...")
-                    self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                        'hf-hub:imageomics/bioclip',
-                        **kwargs
-                    )
-            else:
-                logging.info("Loading from Hugging Face Hub...")
+            # Try local path first
+            ckpt_path = local_model_path / "open_clip_pytorch_model.bin"
+            if ckpt_path.exists():
+                logging.info(f"Loading from local checkpoint: {ckpt_path} (Precision: {precision})")
                 self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                    'hf-hub:imageomics/bioclip',
+                    'ViT-B-16', 
+                    pretrained=str(ckpt_path),
+                    **kwargs
+                )
+            else:
+                logging.info(f"Local checkpoint not found at {ckpt_path}, loading from Hub: {self.model_id}")
+                self.model, _, self.preprocess = open_clip.create_model_and_transforms(
+                    self.model_id,
                     **kwargs
                 )
         except TypeError:
-            # Fallback for older open_clip versions that might not support 'device' arg
+            # Fallback for older open_clip versions
             logging.warning("Installed open_clip might not support 'device' arg, falling back to manual transfer.")
             kwargs.pop("device")
-            if local_model_path.exists() and (local_model_path / "open_clip_pytorch_model.bin").exists():
-                 self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                    'ViT-B-16', 
-                    pretrained=str(local_model_path / "open_clip_pytorch_model.bin"),
-                    **kwargs
-                )
-            else:
-                 self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                    'hf-hub:imageomics/bioclip',
-                    **kwargs
-                )
+            self.model, _, self.preprocess = open_clip.create_model_and_transforms(
+                self.model_id,
+                **kwargs
+            )
             self.model.to(self.device)
         
         # Ensure tokenizer is ready

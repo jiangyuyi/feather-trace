@@ -2,7 +2,9 @@ paths:
   raw_dir: "data/raw"
   processed_dir: "data/processed"
   db_path: "data/db/feathertrace.db"
-  ioc_list_path: "config/Multiling IOC 15.1_d.xlsx"
+  ioc_list_path: "data/references/Multiling IOC 15.1_d.xlsx"
+  china_list: "config/dictionaries/china_bird_list.txt"
+  foreign_list: "config/dictionaries/foreign_countries.txt"
   model_cache_dir: "data/models"
 
 processing:
@@ -14,11 +16,24 @@ processing:
   crop_padding: 200
 
 recognition:
-  mode: "local" # options: local, api
-  region_filter: china  # options: null (world), "china"
-  api_url: ""
-  api_key: ""
+  mode: "local" # options: local, api, dongniao
+  region_filter: "null"  # options: null (world), "china", "auto"
   top_k: 5
+  
+  # BioCLIP Local Configuration
+  local:
+    model_type: "bioclip-2" # options: "bioclip", "bioclip-2"
+    batch_size: 512
+  
+  # BioCLIP API Configuration (HuggingFace)
+  api:
+    url: "https://router.huggingface.co/models/imageomics/bioclip" #not provided yet, please do not use it now
+    key: "" # Overridden by secrets.yaml
+  
+  # Dongniao API Configuration
+  dongniao:
+    url: "https://ai.open.hhodata.com/api/v2/dongniao"
+    key: "" # Overridden by secrets.yaml
 
 web:
   host: "0.0.0.0"

@@ -1,8 +1,8 @@
 # Project Specification: FeatherTrace
-**Version:** 1.1
+**Version:** 1.3
 **Project Name:** feather_trace
 **Language:** Python 3.10+
-**Description:** A personal bird photography automation pipeline and management system. It automates focus detection, cropping, AI species recognition (BioCLIP), metadata injection, and provides a local web interface for searching, retrieval, and manual annotation.
+**Description:** A personal bird photography automation pipeline and management system. It automates focus detection, cropping, AI species recognition (BioCLIP/Dongniao/HF), metadata injection, and provides a local web interface for searching, retrieval, and manual annotation.
 
 ---
 
@@ -20,29 +20,29 @@ The system consists of three main components:
 ```text
 feather_trace/
 ├── config/
-│   ├── settings.yaml         # Configuration (API keys, thresholds, paths)
-│   └── ioc_list.xlsx         # IOC World Bird List (Excel Source)
+│   ├── settings.yaml         # Main Config
+│   ├── secrets.yaml          # Private Keys (GitIgnored)
+│   └── ioc_list.xlsx         # IOC World Bird List
 ├── data/
 │   ├── db/
 │   │   └── feathertrace.db   # SQLite Database
-│   ├── raw/                  # Input folder for raw images (Read-only)
-│   └── processed/            # Output folder for archived images
+│   ├── raw/                  # Input folder
+│   └── processed/            # Output folder
 ├── src/
-│   ├── core/
-│   │   ├── detector.py       # YOLOv8 logic (Object Detection)
-│   │   ├── quality.py        # OpenCV logic (Blur/Sharpness detection)
-│   │   └── processor.py      # Image manipulation (Pillow cropping/resizing)
+│   ├── core/                 # Detection, Quality, Processing
 │   ├── recognition/
-│   │   ├── bioclip_base.py   # Abstract Base Class for inference
-│   │   ├── inference_local.py# BioCLIP model (FP16 optimized)
+│   │   ├── bioclip_base.py
+│   │   ├── inference_local.py # Supports BioCLIP v1 & v2
+│   │   ├── inference_dongniao.py
+│   │   ├── inference_api.py   # HuggingFace
 │   ├── metadata/
-│   │   ├── ioc_manager.py    # DB interaction for Taxonomy & Photos
-│   │   └── exif_writer.py    # PyExifTool wrapper for writing metadata
+│   │   ├── ioc_manager.py
+│   │   └── exif_writer.py
+│   ├── utils/                # config_loader.py
 │   ├── web/
-│   │   ├── app.py            # FastAPI entry point
-│   │   ├── templates/        # HTML templates (Admin, Index)
-│   │   └── static/           # CSS/JS
-│   └── pipeline_runner.py    # Main ETL script
+│   │   ├── app.py
+│   │   └── templates/
+│   └── pipeline_runner.py
 ├── requirements.txt
 └── README.md
 ```
@@ -51,63 +51,39 @@ feather_trace/
 
 ## 3. Module Requirements
 
-### A. Pre-processing (`src/core`)
-1.  **Object Detection (YOLOv8):**
-    * Detect objects with class ID `14` (Bird).
-2.  **Quality Check (OpenCV):**
-    * Laplacian Variance method for sharpness score.
-3.  **Deduplication:**
-    * **Hash-based**: Calculate partial SHA256 of raw files to prevent re-processing.
+### A. Pre-processing
+*   **Object Detection (YOLOv8)**: Detects birds.
+*   **Quality Check**: Filters blurry images.
+*   **Deduplication**: Hash-based check.
 
-### B. Recognition Engine (`src/recognition`)
-1.  **BioCLIP Optimization:**
-    * **FP16 Inference**: Enabled for RTX 30/40 series GPUs to prevent memory spikes.
-    * **Caching**: Cache text embeddings for 1000x faster inference.
-    * **Batching**: Process text labels in batches to avoid OOM.
+### B. Recognition Engine
+*   **Local**: BioCLIP v1/v2 (FP16 optimized).
+*   **Dongniao**: API based (China optimized).
+*   **HuggingFace**: API based (Zero-shot).
 
-### C. Data & Metadata (`src/metadata`)
-1.  **IOC Database Integration:**
-    * Import full taxonomy from Excel (`ioc_list.xlsx`).
-    * Support fuzzy search (Chinese/Scientific names).
-2.  **ExifTool Integration:**
-    * Write `IPTC:Keywords` and `XMP:Description`.
+### C. Configuration
+*   **Secure Loading**: Merges `settings.yaml` and `secrets.yaml`.
+*   **Region Auto-Switch**: Automatically selects taxonomy based on folder name (Foreign vs Domestic).
 
-### D. Database Schema (SQLite)
-
-**Table 1: `taxonomy`**
-* `id`, `scientific_name`, `chinese_name`, `family_cn`, `order_cn`
-
-**Table 2: `photos`**
-* `id`, `file_path` (Processed), `filename`
-* `original_path` (Absolute path to RAW file)
-* `file_hash` (For deduplication)
-* `captured_date`, `location_tag`
-* `primary_bird_cn`, `scientific_name`, `confidence_score`
-
-### E. Web Interface (`src/web`)
-1.  **Framework:** FastAPI.
-2.  **Features:**
-    * **Gallery View:** Grid layout with Toggle View (Raw/Processed).
-    * **Search:** Filter by species, location, date.
-    * **Manual Annotation:** Modal to correct species using fuzzy search dropdown.
-    * **Admin Dashboard:** System stats and "Reset System" functionality.
-    * **Download:** Download both processed and raw images.
+### D. Web Interface
+*   **Gallery**: Toggle Raw/Processed view.
+*   **Edit**: Fuzzy search for manual correction.
+*   **Admin**: System reset and stats.
 
 ---
 
 ## 4. Workflows
 
-### Workflow 1: Data Ingest (`pipeline_runner.py`)
-1.  **Scan:** Iterate `data/raw`.
-2.  **Dedup:** Check file hash against DB. Skip if exists.
-3.  **Process:** Detect -> Crop -> Recognize.
-4.  **Archive:** Save to `data/processed`.
-5.  **Index:** Insert into DB with `original_path` and `file_hash`.
+### Workflow 1: Data Ingest
+1.  **Scan & Dedup**: Iterate `data/raw`, skip duplicates.
+2.  **Process**: Detect -> Crop -> Recognize (Local/API).
+3.  **Archive**: Save to `data/processed`, write EXIF.
+4.  **Index**: Insert into DB.
 
 ### Workflow 2: Web Interaction
 1.  User browses gallery.
-2.  User clicks "Toggle" to compare Raw vs Processed.
-3.  If recognition is wrong, User clicks "Edit", searches for correct species, and saves.
-4.  Backend updates DB record (Confidence set to 1.0).
+2.  User verifies ID using "Original View".
+3.  User corrects ID using search dropdown.
+4.  Backend updates DB.
 
 ---

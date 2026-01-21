@@ -1,29 +1,29 @@
 # 项目说明：FeatherTrace (羽迹)
 
-**版本:** 1.1
+**版本:** 1.3
 **语言:** Python 3.10+
 **描述:** 个人鸟类摄影自动化流水线与管理系统。
 
 ---
 
-## 更新日志 (v1.1)
-1.  **稳定性修复**: 针对 RTX 4060 笔记本显卡，实施了 FP16 混合精度加载与 Batching 策略，彻底解决了模型加载死机问题。
-2.  **性能飞跃**: 引入 Text Feature Caching，推理速度提升 1000 倍。
-3.  **智能去重**: 在 Pipeline 中增加了基于文件内容哈希的去重机制，防止重复处理。
-4.  **Web 交互升级**:
-    *   新增“原图/裁切图”一键切换查看。
-    *   新增“人工修正”功能，支持 IOC 名录模糊搜索（中文/拉丁名）。
-    *   新增“系统管理”后台，支持一键重置数据。
-5.  **数据层升级**: 数据库新增 `original_path` 与 `file_hash` 字段，支持原图映射。
+## 更新日志 (v1.3)
+1.  **架构升级**: 引入 `config_loader` 实现配置与密钥分离 (`settings.yaml` + `secrets.yaml`)。
+2.  **多模型支持**: 本地识别模块支持 **BioCLIP** 和 **BioCLIP-2** 切换。
+3.  **API 增强**: 
+    *   **懂鸟**: 修复了列表格式响应的解析 bug。
+    *   **HuggingFace**: 更新了 API 端点 (`router.huggingface.co`) 并实现了完整的 Base64 调用逻辑。
+4.  **鲁棒性**: 
+    *   Web Admin 的“系统重置”功能增加了针对 Windows 文件锁的强力修复策略（重命名删除、GC 回收）。
+    *   Web App 启动时自动修复数据库 Schema。
 
 ---
 
 ## 1. 系统架构
 
 系统包含三个核心组件：
-1.  **Pipeline (ETL)**: 负责图像摄取、检测 (YOLO)、识别 (BioCLIP)、元数据写入 (ExifTool) 和归档。
+1.  **Pipeline (ETL)**: 负责图像摄取、检测 (YOLO)、识别 (BioCLIP/Dongniao/HF)、元数据写入 (ExifTool) 和归档。
 2.  **Database (SQLite)**: 存储 IOC 分类树 (Taxonomy) 和照片索引 (Photos)。
-3.  **Web Interface (FastAPI)**: 提供浏览、搜索、下载和人工校对功能。
+3.  **Web Interface (FastAPI)**: 提供浏览、搜索、下载、人工校对和系统管理功能。
 
 ---
 
@@ -35,44 +35,28 @@
 *   **Quality**: 基于拉普拉斯方差过滤模糊废片。
 
 ### B. 识别引擎 (`src/recognition`)
-*   **BioCLIP**: 使用 `imageomics/bioclip` 模型。
-*   **优化策略**: 
-    *   `FP16` + `Autocast`: 降低显存占用。
-    *   `Batching`: 文本特征计算分批进行 (Batch Size 512)。
-    *   `Caching`: 缓存向量，避免重复计算。
+*   **BioCLIP (Local)**:
+    *   支持 `bioclip` 和 `bioclip-2`。
+    *   FP16 + Batching + Caching 优化。
+*   **Dongniao (API)**:
+    *   支持国内高精度识别。
+    *   健壮的 JSON 解析逻辑。
+*   **HuggingFace (API)**:
+    *   支持 Zero-Shot Image Classification。
 
 ### C. 数据管理 (`src/metadata`)
 *   **IOCManager**: 封装数据库操作。支持从 Excel 导入分类数据。支持模糊搜索。
-*   **Schema**: 
-    *   `taxonomy`: 存储 10,000+ 种鸟类信息。
-    *   `photos`: 存储图片路径、哈希、原图映射、识别结果。
+*   **Deduplication**: 基于文件 SHA256 哈希去重。
 
 ### D. Web 服务 (`src/web`)
 *   **前端**: Bootstrap 5 + Vanilla JS。支持原图查看与模态框编辑。
-*   **后端**: FastAPI。提供 RESTful API (`/api/search_species`, `/api/update_label`, `/api/admin/reset`)。
-*   **静态资源**: 挂载 `data/processed` 和 `data/raw`。
+*   **后端**: FastAPI。
+*   **管理**: 提供数据库重置和统计面板。
 
 ---
 
-## 3. 工作流
+## 3. 维护指南
 
-### 初始化
-1.  运行 `scripts/import_ioc_data.py` 填充分类数据库。
-
-### 日常处理
-1.  将照片导入 `data/raw/YYYYMMDD_Location/`。
-2.  运行 `python src/pipeline_runner.py`。
-    *   系统自动计算哈希去重。
-    *   生成裁切图并归档至 `data/processed`。
-    *   写入数据库。
-
-### 浏览与修正
-1.  运行 `python src/web/app.py`。
-2.  在 Web 界面查看照片。
-3.  点击“切换”按钮对比原图。
-4.  点击“编辑”按钮，搜索正确鸟种并保存。
-
----
-
-## 4. 维护
-*   **重置**: 访问 `/admin` 页面可清空数据库重建索引（推荐在升级版本后使用）。
+*   **重置**: 访问 `/admin` 页面可清空数据库重建索引。
+*   **密钥管理**: 修改 `config/secrets.yaml`。
+*   **模型切换**: 修改 `config/settings.yaml` 中的 `local.model_type`。
