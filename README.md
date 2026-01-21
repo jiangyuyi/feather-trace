@@ -90,4 +90,4 @@ python src/web/app.py
 
 ---
 **License**: MIT  
-**Author**: Gemini Assistant
+**Author**: 鱼酱 with Gemini Assistant
