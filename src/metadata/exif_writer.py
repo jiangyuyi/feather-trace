@@ -1,5 +1,8 @@
-import exiftool
 import logging
+import subprocess
+import tempfile
+import shutil
+import os
 from typing import List, Dict, Any
 
 class ExifWriter:
@@ -12,33 +15,77 @@ class ExifWriter:
 
     def write_metadata(self, image_path: str, tags: Dict[str, Any]):
         """
-        Write tags to the image.
+        Write tags to the image using an argfile to handle character encoding correctly.
         """
-        import shutil
         if not shutil.which(self.exiftool_path):
             logging.warning(f"ExifTool not found at '{self.exiftool_path}'. Skipping metadata writing.")
             return False
 
+        # Prepare arguments for argfile
+        # -charset utf8 is passed to CLI, argfile should be UTF-8.
+        lines = [
+            "-m",
+            "-overwrite_original",
+            "-charset", "iptc=UTF8",
+            "-codedcharacterset=utf8"
+        ]
+        
+        for tag, value in tags.items():
+            if isinstance(value, list):
+                # For multi-value tags like Keywords
+                for v in value:
+                    if v: # Skip empty values
+                        lines.append(f"-{tag}={v}")
+            else:
+                if value:
+                    lines.append(f"-{tag}={value}")
+        
+        # Write to temporary argfile (UTF-8)
+        # delete=False is required on Windows to allow closing before subprocess reads it
         try:
-            with exiftool.ExifTool(self.exiftool_path) as et:
-                # Prepare arguments
-                # format: -Tag=Value
-                args = []
-                for tag, value in tags.items():
-                    if isinstance(value, list):
-                        # For multi-value tags like Keywords
-                        for v in value:
-                            args.append(f"-{tag}={v}")
-                    else:
-                        args.append(f"-{tag}={value}")
-                
-                # Execute
-                et.execute(*args, image_path)
-                logging.info(f"Metadata written to {image_path}")
-                return True
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as tf:
+                tf.write('\n'.join(lines))
+                arg_file = tf.name
         except Exception as e:
-            logging.error(f"Failed to write metadata: {e}")
+            logging.error(f"Failed to create temporary argfile: {e}")
             return False
+            
+        try:
+            cmd = [
+                self.exiftool_path,
+                "-charset", "utf8", # Interpret argfile and CLI args as UTF-8
+                "-@", arg_file,
+                image_path
+            ]
+            
+            # Run ExifTool
+            # capture_output=True to suppress stdout unless error
+            # Use text=False (binary mode) to avoid UnicodeDecodeError in background reader thread
+            # if output is not valid UTF-8 (e.g. system locale warning)
+            subprocess.run(cmd, check=True, capture_output=True, text=False)
+            logging.info(f"Metadata written to {image_path}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            # Decode stderr safely
+            try:
+                err_msg = e.stderr.decode('utf-8')
+            except UnicodeDecodeError:
+                # Fallback to system encoding or ignore
+                err_msg = e.stderr.decode('mbcs', errors='replace') if os.name == 'nt' else e.stderr.decode('utf-8', errors='replace')
+                
+            logging.error(f"Failed to write metadata: {err_msg}")
+            return False
+        except Exception as e:
+            logging.error(f"ExifTool execution error: {e}")
+            return False
+        finally:
+            # Cleanup temp file
+            if os.path.exists(arg_file):
+                try:
+                    os.remove(arg_file)
+                except:
+                    pass
 
     def rename_photo(self, current_path: str, new_name: str) -> str:
         """

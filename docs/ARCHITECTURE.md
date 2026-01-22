@@ -1,121 +1,65 @@
-# FeatherTrace Architecture Documentation
+# FeatherTrace 系统架构文档 (v1.5)
 
-**Version:** 1.3
-**Date:** 2026-01-21
+## 1. 核心设计理念
 
-## 1. System Overview
+FeatherTrace 1.5 引入了**虚拟文件系统 (VFS)** 层，旨在打破对本地物理路径的依赖，实现“多源接入、按需处理、原位回写”。
 
-FeatherTrace is an automated post-processing and management system for bird photography. It transforms raw field photos into an organized, identified, and searchable digital library.
-
-### Core Philosophy
-*   **Privacy First**: Default local processing (BioCLIP) with optional cloud acceleration (Dongniao/HF).
-*   **Safety**: Non-destructive to raw files. Hash-based deduplication to prevent redundant processing.
-*   **Stability**: Optimized for consumer hardware (RTX 4060 Laptop target) with FP16 precision and batching.
+### 关键组件：
+*   **StorageProvider (IO 抽象层)**: 定义了统一的文件操作接口。目前实现了 `LocalProvider`，未来可无缝扩展 `WebDAVProvider` 或 `SMBProvider`。
+*   **PathParser & PathGenerator**: 实现了路径与元数据的双向映射。`Parser` 利用正则从路径提取信息，`Generator` 利用模版生成归档路径。
+*   **TaskManager**: 在 Web 服务后端管理异步流水线线程，通过 WebSocket 提供实时反馈。
 
 ---
 
-## 2. Directory Structure
+## 2. 目录结构
 
 ```text
 feather_trace/
-├── config/
-│   ├── settings.yaml         # Main public configuration (Paths, Thresholds)
-│   ├── secrets.yaml          # [GitIgnored] Private Keys (Dongniao/HF API)
-│   ├── ioc_list.xlsx         # IOC World Bird List Source
-│   ├── china_bird_list.txt   # Whitelist for 'China' region mode
-│   └── foreign_countries.txt # Keywords for Auto-Region detection
-├── data/
-│   ├── db/
-│   │   └── feathertrace.db   # SQLite Database
-│   ├── models/               # Local Model Cache
-│   │   ├── bioclip/          # BioCLIP v1 weights
-│   │   └── bioclip-2/        # BioCLIP v2 weights
-│   ├── raw/                  # [Input] Raw photos organized by folder
-│   └── processed/            # [Output] Cropped & Renamed photos
-├── docs/                     # Documentation
-├── scripts/                  # Utilities (Import, Reset, Test)
 ├── src/
-│   ├── core/                 # Computer Vision (YOLO, OpenCV)
-│   ├── metadata/             # Data Layer (IOCManager, ExifTool)
-│   ├── recognition/          # Inference Engines (Local, Dongniao, HF)
-│   ├── utils/                # Helpers (Config Loader)
-│   ├── web/                  # FastAPI Web Application
-│   └── pipeline_runner.py    # Main ETL Entry Point
-└── tests/                    # Unit Tests
+│   ├── core/
+│   │   ├── io/               # VFS 核心实现
+│   │   │   ├── provider.py   # 抽象基类
+│   │   │   ├── local.py      # 本地文件实现 (含安全检查)
+│   │   │   ├── fs_manager.py # 调度器
+│   │   │   ├── path_parser.py# 输入路径解析
+│   │   │   ├── path_generator.py # 输出路径模版
+│   │   │   └── temp_manager.py # 远程文件本地化缓存
+│   │   ├── detector.py       # YOLOv8 鸟类检测
+│   │   └── processor.py      # 图像裁切与缩放
+│   ├── recognition/          # AI 识别引擎策略
+│   ├── metadata/             # 数据库与 EXIF 处理
+│   ├── web/                  # FastAPI 异步 Web 服务
+│   └── pipeline_runner.py    # 批处理流水线核心
 ```
 
 ---
 
-## 3. Key Components
+## 3. 数据流逻辑
 
-### 3.1. The ETL Pipeline (`src/pipeline_runner.py`)
-The pipeline orchestrates the flow of data:
-1.  **Ingest**: Scans `data/raw`. Parses folder names to determine `Location` and `Date`.
-2.  **Deduplication**: Calculates partial SHA256 hash of the source file. Skips if hash exists in DB.
-3.  **Region Strategy**:
-    *   **Auto Mode**: Checks if folder location contains a country name from `foreign_countries.txt`.
-        *   Match -> Use Global Taxonomy.
-        *   No Match -> Use China Taxonomy (subset).
-4.  **Processing**:
-    *   **Detection**: YOLOv8 (`src/core/detector.py`) finds bird bounding boxes.
-    *   **Quality**: Laplacian variance check (`src/core/quality.py`) filters blurry images.
-    *   **Cropping**: Extracts the subject with padding.
-5.  **Recognition**: Dispatches to the configured engine.
-6.  **Archiving**: Writes Metadata (IPTC/XMP) and moves result to `data/processed`.
-7.  **Indexing**: Records metadata, file hash, and original path in SQLite.
+### 3.1 批处理流程 (Pipeline)
+1.  **扫描 (VFS)**: 遍历 `sources` 配置中的所有路径。
+2.  **解析 (PathParser)**: 从当前文件路径提取 `Date` 和 `Location`。
+3.  **去重**: 计算文件部分哈希，对比 SQLite 数据库。
+4.  **本地化 (TempManager)**: 如果文件在远程，则下载到临时目录；本地文件则直接引用。
+5.  **AI 处理**: 运行检测、画质检测、模型推理。
+6.  **路径生成 (PathGenerator)**: 根据模版生成目标位置（支持 `{species_cn}` 等变量）。
+7.  **回写 (Metadata Writeback)**: 
+    *   写入处理后的照片。
+    *   (可选) 写入原始照片。
+8.  **索引**: 更新数据库记录。
 
-### 3.2. Recognition Engines (`src/recognition`)
-Designed with a Strategy Pattern to support multiple backends:
-
-*   **Local (BioCLIP)**:
-    *   Supports `bioclip` and `bioclip-2`.
-    *   **Optimizations**: FP16 precision, Autocast, Text Feature Caching (1000x speedup for subsequent images), Batching.
-*   **Dongniao API**:
-    *   Specialized for Chinese birds.
-    *   Robust parsing for inconsistent API response formats (List vs Dict).
-*   **HuggingFace API**:
-    *   Standard Zero-Shot classification via `router.huggingface.co`.
-
-### 3.3. Data & Metadata (`src/metadata`)
-*   **IOCManager**:
-    *   Manages `feathertrace.db`.
-    *   **Schema**:
-        *   `taxonomy`: Imported from IOC Excel. Support fuzzy search.
-        *   `photos`: Stores identifying info, confidence, hash, and path mapping.
-    *   **Self-Healing**: Auto-imports taxonomy if table is empty on startup.
-*   **Config Loader**:
-    *   Merges `settings.yaml` and `secrets.yaml` to ensure security.
-
-### 3.4. Web Interface (`src/web`)
-A FastAPI application serving a Bootstrap 5 frontend.
-*   **Gallery**: Grid view with "Lazy Loading".
-*   **Interaction**:
-    *   **Toggle View**: Instant switch between Cropped and Raw image (mapped via DB).
-    *   **Edit**: Fuzzy search dropdown to manually correct species.
-*   **Admin**: Dashboard for statistics and **System Reset** (handles file locking robustness).
+### 3.2 Web UI 交互
+*   **静态资源映射**: 利用 FastAPI 的 `mount` 功能，将 `allowed_roots` 中的物理路径映射为 Web 可访问的 `/static/roots/{n}` URL。
+*   **WebSocket 控制台**: 前端通过 WS 连接后端 `TaskManager`，实时获取流水线日志输出。
 
 ---
 
-## 4. Data Flow
+## 4. 安全与性能优化
 
-1.  **User** places photos in `data/raw/20231020_Park`.
-2.  **User** runs `python src/pipeline_runner.py`.
-    *   Pipeline reads config & secrets.
-    *   Pipeline loads Taxonomy.
-    *   Pipeline processes images -> updates DB.
-3.  **User** starts `python src/web/app.py`.
-    *   App initializes DB connection (safe check).
-    *   User browses `http://localhost:8000`.
-    *   User notices wrong ID -> Clicks Edit -> Searches "Sparrow" -> Saves.
-    *   App updates DB `primary_bird_cn` and sets `confidence` to 1.0.
-
----
-
-## 5. Security & Stability Features
-
-*   **Secrets Management**: API Keys are isolated in `secrets.yaml` (GitIgnored).
-*   **Concurrency**: Database connections use `timeout=30.0` and proper closing logic to prevent locking on Windows.
-*   **Resilience**:
-    *   Pipeline skips already processed files (Dedup).
-    *   Web Admin allows "Force Reset" even if files are locked (Rename-then-Delete strategy).
-    *   Pipeline auto-recovers missing taxonomy data.
+*   **安全沙箱**: `LocalProvider` 会校验所有路径是否属于 `allowed_roots` 白名单，防止目录遍历攻击。
+*   **内存优化**: 
+    *   `BioCLIP` 本地推理支持文本特征缓存，识别速度提升 1000 倍。
+    *   大量采用 `Generator` 迭代文件，避免一次性加载数万个文件路径。
+*   **稳定性**:
+    *   `ExifTool` 采用 Argfile 模式，解决 Windows 平台中文路径和标签的乱码问题。
+    *   所有阻塞式 Web 路由均采用同步 `def` 定义，运行在独立线程池，确保 Web 界面永不卡死。

@@ -103,14 +103,24 @@ class IOCManager:
     def search_species(self, query: str, limit: int = 20) -> List[Dict]:
         """
         Search for species by Latin or Chinese name.
+        Prioritizes Chinese name matches and shorter names.
         """
-        q = f"%{query}%"
+        q_like = f"%{query}%"
+        q_start = f"{query}%"
+        
         self.cursor.execute('''
-            SELECT scientific_name, chinese_name 
+            SELECT scientific_name, chinese_name,
+            CASE 
+                WHEN chinese_name = ? THEN 1
+                WHEN chinese_name LIKE ? THEN 2
+                WHEN chinese_name LIKE ? THEN 3
+                ELSE 4
+            END as relevance
             FROM taxonomy 
             WHERE scientific_name LIKE ? OR chinese_name LIKE ?
+            ORDER BY relevance ASC, LENGTH(chinese_name) ASC
             LIMIT ?
-        ''', (q, q, limit))
+        ''', (query, q_start, q_like, q_like, q_like, limit))
         return [dict(row) for row in self.cursor.fetchall()]
 
     def check_hash_exists(self, file_hash: str) -> bool:

@@ -6,9 +6,11 @@ torch
 requests
 PyExifTool
 fastapi
-uvicorn
+uvicorn[standard]
 jinja2
 python-multipart
 sqlalchemy
 pandas
 pyyaml
+openpyxl
+websockets

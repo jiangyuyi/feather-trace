@@ -2,96 +2,87 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>系统管理 - FeatherTrace</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FeatherTrace Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        .console-box {
+            background: #1e1e1e;
+            color: #00ff00;
+            font-family: monospace;
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
-<body class="bg-light">
+<body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="/">
-                <i class="bi bi-feather me-2"></i> FeatherTrace
-            </a>
-            <div class="collapse navbar-collapse justify-content-end">
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/admin"><i class="bi bi-gear-fill"></i> 系统管理</a>
-                    </li>
-                </ul>
+            <a class="navbar-brand" href="/">FeatherTrace</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Back to Gallery</a>
             </div>
         </div>
     </nav>
 
-    <div class="container mt-5">
-        <div class="row">
-            <div class="col-md-8 offset-md-2">
-                <h2 class="mb-4">系统管理控制台</h2>
-                
-                <!-- System Status Card -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <i class="bi bi-activity"></i> 系统状态
-                    </div>
+    <div class="container mt-4">
+        <h2>System Administration</h2>
+        
+        <!-- Stats Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-4">
+                <div class="card text-center h-100">
                     <div class="card-body">
-                        <div class="row text-center">
-                            <div class="col-md-4">
-                                <h3>{{ stats.total_photos }}</h3>
-                                <p class="text-muted">已处理照片</p>
-                            </div>
-                            <div class="col-md-4">
-                                <h3>{{ stats.total_species }}</h3>
-                                <p class="text-muted">识别物种数</p>
-                            </div>
-                            <div class="col-md-4">
-                                <h3>{{ stats.storage_usage }}</h3>
-                                <p class="text-muted">占用空间 (MB)</p>
-                            </div>
-                        </div>
+                        <h3 class="display-4">{{ stats.total_photos }}</h3>
+                        <p class="text-muted">Total Photos</p>
                     </div>
                 </div>
-
-                <!-- Danger Zone -->
-                <div class="card border-danger shadow-sm">
-                    <div class="card-header bg-danger text-white">
-                        <i class="bi bi-exclamation-triangle-fill"></i> 危险操作区
-                    </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center h-100">
                     <div class="card-body">
-                        <h5 class="card-title">重置系统数据</h5>
-                        <p class="card-text text-muted">
-                            如果您遇到以下问题，可以尝试重置系统：
-                            <ul>
-                                <li>原图/裁切图切换按钮不可用（灰色）</li>
-                                <li>数据库与文件不一致</li>
-                                <li>想重新运行流水线并启用去重功能</li>
-                            </ul>
-                            <strong class="text-danger">警告：此操作将永久删除所有已处理的照片、数据库记录和人工标注！原始照片（data/raw）不会被删除。</strong>
-                        </p>
-                        <button class="btn btn-outline-danger" onclick="confirmReset()">
-                            <i class="bi bi-trash"></i> 彻底重置系统 (清空处理结果 & DB)
-                        </button>
+                        <h3 class="display-4">{{ stats.total_species }}</h3>
+                        <p class="text-muted">Unique Species</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <h3 class="display-4">{{ stats.storage_usage }} MB</h3>
+                        <p class="text-muted">Storage Usage</p>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Confirm Modal -->
-    <div class="modal fade" id="confirmModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title">确认高危操作</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="row">
+            <!-- Pipeline Control -->
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Batch Processing</h5>
+                        <button id="start-btn" class="btn btn-light btn-sm">▶ Start Pipeline</button>
+                    </div>
+                    <div class="card-body bg-dark">
+                        <div id="console" class="console-box">
+                            <div>Ready. Waiting for command...</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <p>您确定要删除所有已归档的照片和数据库记录吗？</p>
-                    <p>请输入 <strong>DELETE</strong> 以确认。</p>
-                    <input type="text" class="form-control" id="confirmInput" placeholder="DELETE">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-danger" id="btnConfirmDelete" disabled onclick="executeReset()">确认重置</button>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="col-md-4">
+                <div class="card border-danger mb-4">
+                    <div class="card-header bg-danger text-white">Danger Zone</div>
+                    <div class="card-body">
+                        <p class="small text-muted">This will delete the database and all processed images. Raw files are safe.</p>
+                        <button onclick="resetSystem()" class="btn btn-outline-danger w-100">⚠️ Factory Reset</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -99,32 +90,70 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
-        const input = document.getElementById('confirmInput');
-        const btn = document.getElementById('btnConfirmDelete');
+        // 1. WebSocket for Logs
+        const consoleBox = document.getElementById('console');
+        const startBtn = document.getElementById('start-btn');
+        let ws = null;
 
-        function confirmReset() {
-            input.value = '';
-            btn.disabled = true;
-            modal.show();
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/progress`);
+            
+            ws.onmessage = (event) => {
+                const line = document.createElement('div');
+                line.textContent = event.data;
+                consoleBox.appendChild(line);
+                consoleBox.scrollTop = consoleBox.scrollHeight;
+                
+                // Simple state check based on log content
+                if (event.data.includes("Pipeline execution completed")) {
+                    startBtn.disabled = false;
+                    startBtn.textContent = "▶ Start Pipeline";
+                }
+            };
+            
+            ws.onclose = () => {
+                // Reconnect logic if needed
+                setTimeout(connectWS, 2000);
+            };
         }
+        
+        connectWS();
 
-        input.addEventListener('input', (e) => {
-            btn.disabled = e.target.value !== 'DELETE';
+        // 2. Start Pipeline
+        startBtn.addEventListener('click', () => {
+            if(!confirm("Start processing all sources?")) return;
+            
+            startBtn.disabled = true;
+            startBtn.textContent = "⏳ Running...";
+            consoleBox.innerHTML = "<div>Requesting start...</div>";
+            
+            fetch('/api/pipeline/start', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    if(data.status === 'error') {
+                        alert(data.message);
+                        startBtn.disabled = false;
+                        startBtn.textContent = "▶ Start Pipeline";
+                    }
+                });
         });
 
-        function executeReset() {
-            fetch('/api/admin/reset', { method: 'POST' })
-                .then(res => res.json())
+        // 3. Reset System
+        function resetSystem() {
+            if(!confirm("ARE YOU SURE? This cannot be undone!")) return;
+            if(!confirm("Really? All processed data will be lost.")) return;
+            
+            fetch('/api/admin/reset', {method: 'POST'})
+                .then(r => r.json())
                 .then(data => {
-                    if (data.status === 'success') {
-                        alert('系统已重置。请重新运行流水线脚本。');
-                        window.location.reload();
+                    if(data.status === 'success') {
+                        alert('System reset complete. Reloading...');
+                        location.reload();
                     } else {
-                        alert('重置失败: ' + data.detail);
+                        alert('Error: ' + data.detail);
                     }
-                })
-                .catch(err => alert('网络错误'));
+                });
         }
     </script>
 </body>

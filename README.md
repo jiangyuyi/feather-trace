@@ -1,36 +1,41 @@
 # FeatherTrace (羽迹) - 智能鸟类摄影管理系统
 
-**Version:** 1.3  
-**Status:** Stable (Multi-Model, Secure Config, Robust)
+**Version:** 1.5  
+**Status:** Stable (Advanced VFS, Multi-Source, Async Pipeline)
 
-FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉（YOLOv8）和多模态大模型（BioCLIP/懂鸟API）技术，自动完成照片的**鸟类检测、画质筛选、物种识别、元数据注入**以及**归档整理**，并提供一个本地 Web 界面进行检索、人工修正和原图比对。
+FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉（YOLOv8）和多模态大模型技术，自动完成照片的**检测、筛选、识别、元数据注入**以及**层级归档**，并提供一个支持异步批处理的 Web 界面。
 
 ---
 
 ## ✨ 核心功能
 
-*   **🔍 自动检测与裁剪**: 使用 YOLOv8 自动识别照片中的鸟类，并基于边界框进行智能裁剪。
+*   **🌐 虚拟文件系统 (VFS)**: 
+    *   支持任意本地路径，并为 WebDAV/SMB 等远程协议预留了架构。
+    *   **安全限制**: 引入 `allowed_roots` 白名单机制，确保系统仅访问授权目录。
+*   **📂 多源输入与智能解析**:
+    *   支持配置多个源文件夹。
+    *   **自定义解析**: 支持使用正则表达式从复杂的文件夹结构中提取“日期”和“地点”元数据。
+*   **🛠️ 动态输出模版**:
+    *   支持基于元数据的自定义归档结构（例如：`{year}/{location}/{species_cn}/{filename}`）。
+    *   **镜像模式**: 可选择完全保留原始目录结构进行输出。
 *   **🧠 多引擎识别**:
-    *   **BioCLIP (Local)**: 免费、离线。支持 **v1** 和 **v2** 模型切换。针对显卡优化 (FP16/Caching)。
-    *   **懂鸟 (Dongniao API)**: 专为中国鸟类优化，识别准确率极高。
-    *   **HuggingFace API**: 标准云端推理支持。
-*   **⚡ 性能与稳定性**:
-    *   **智能去重**: 基于文件哈希防止重复处理。
-    *   **Auto Region**: 根据文件夹名称自动切换“中国/全球”名录。
-    *   **Anti-Crash**: 针对 Windows 文件锁和显存峰值做了深度优化。
-*   **🛡️ 安全配置**: 敏感 API Key 存储在独立的 `secrets.yaml` 中，防止泄露。
-*   **💻 高级 Web 图库**:
-    *   **原图/裁切图切换**: 实时对比。
-    *   **人工修正**: 支持中英文模糊搜索。
-    *   **系统管理**: 一键重置系统数据。
+    *   **BioCLIP (Local)**: 针对显卡优化 (FP16/Caching)，支持 v1/v2 模型切换。
+    *   **懂鸟 (Dongniao API)**: 专为中国鸟类优化。
+*   **✍️ 元数据回写**: 
+    *   自动为处理后的照片写入 IPTC/XMP 标签。
+    *   **源文件回写**: 支持将识别出的鸟种信息写回原始 Raw 文件，方便其他搜索工具索引。
+*   **💻 高级 Web UI**:
+    *   **异步批处理**: 在 Web 界面一键启动流水线，通过 WebSocket 实时查看黑色控制台日志。
+    *   **智能搜索**: 针对中国鸟类优化搜索算法，优先展示中文名匹配结果。
+    *   **对比预览**: 按住图片可实时对比“裁切图”与“原图”。
 
 ---
 
 ## 🛠️ 环境依赖
 
 *   **Python 3.10+**
-*   **ExifTool**: 必须安装并添加到系统 PATH。
-*   **GPU**: 推荐 NVIDIA RTX 30/40 系列 (8GB+ 显存最佳，已优化支持 6GB)。
+*   **ExifTool**: 必须安装并添加到系统 PATH（系统会自动进行环境检查）。
+*   **GPU**: 推荐 NVIDIA RTX 系列（支持 FP16 加速）。
 
 ---
 
@@ -42,52 +47,57 @@ FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它�
 pip install -r requirements.txt
 ```
 
-### 2. 配置系统
-
-**基础配置 (`config/settings.yaml`)**:
-修改 `processing.device` 或 `recognition.mode`。
-
-**安全配置 (`config/secrets.yaml`)**:
-新建此文件（或使用模板），填入你的 API Key：
+### 2. 配置源与输出 (`config/settings.yaml`)
 
 ```yaml
-recognition:
-  dongniao:
-    key: "YOUR_DONGNIAO_KEY"
-  api:
-    key: "YOUR_HF_TOKEN"
+paths:
+  allowed_roots: ["D:/Photos", "E:/Birds"] # 允许访问的根目录
+  sources:
+    - path: "D:/Photos/2023_Raw"
+      recursive: true
+      structure_pattern: "(?P<date>\\d{8})_(?P<location>.*)" # 可选正则解析
+  output:
+    root_dir: "D:/Photos/Processed"
+    structure_template: "{year}/{location}/{species_cn}/{filename}"
+    write_back_to_source: true # 是否回写原图
 ```
 
-### 3. 初始化
-
-首次运行流水线会自动导入 IOC 鸟类名录。如果需要手动导入：
-```bash
-python scripts/import_ioc_data.py
-```
-
-### 4. 运行流水线
-
-将照片放入 `data/raw` 下的子文件夹（如 `20231020_OlympicPark`）。
-
-```bash
-python src/pipeline_runner.py
-```
-
-### 5. 启动 Web 图库
+### 3. 启动 Web 界面
 
 ```bash
 python src/web/app.py
 ```
-浏览器访问: `http://localhost:8000`
+访问 `http://localhost:8000`，进入 **Admin & Tasks** 页面点击 **Start Pipeline** 即可开始自动化处理。
 
 ---
 
-## ⚙️ 常见操作
+## 🤝 鸣谢与致谢 (Acknowledgements)
 
-*   **切换本地模型**: 在 `settings.yaml` 中设置 `local.model_type` 为 `bioclip` 或 `bioclip-2`。
-*   **重置系统**: 访问 Web 界面的 `/admin` 页面，点击“彻底重置”。
-*   **查看架构**: 详见 `docs/ARCHITECTURE.md`。
+本项目的数据支持与核心算法离不开以下开源项目和数据服务的贡献：
+
+### 📚 数据与标准 (Data & Standards)
+*   **IOC World Bird List**: [https://www.worldbirdnames.org/new/](https://www.worldbirdnames.org/new/)  
+    提供全球鸟类分类与命名标准。
+*   **Catalogue of Life China (中国生物物种名录)**: [http://www.sp2000.org.cn/](http://www.sp2000.org.cn/)  
+    提供中国鸟类中文名录与分类参考。
+
+### 🧠 模型与算法 (Models & Algorithms)
+*   **BioCLIP Model**: [https://imageomics.github.io/bioclip/](https://imageomics.github.io/bioclip/)  
+    基于大规模生物图像训练的视觉模型，本项目核心识别引擎。
+*   **懂鸟 API (Dongniao)**: [https://ai.open.hhodata.com/#introduce](https://ai.open.hhodata.com/#introduce)  
+    提供高精度的中国本土鸟类识别服务。
+
+### 🏗️ 核心开源依赖 (Core Open Source Projects)
+本项目构建于以下优秀的开源项目之上：
+*   **FastAPI**: 高性能 Web API 框架。
+*   **Ultralytics YOLOv8**: 最先进的实时物体检测模型。
+*   **PyTorch**: 深度学习基础框架。
+*   **HuggingFace Transformers**: 模型加载与推理库。
+*   **ExifTool (by Phil Harvey)**: 业界标准的元数据读写工具。
+*   **Pillow (PIL)**: Python 图像处理库。
+*   **Bootstrap**: 响应式前端界面框架。
 
 ---
+
 **License**: MIT  
 **Author**: 鱼酱 with Gemini Assistant
