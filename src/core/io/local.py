@@ -9,6 +9,15 @@ class SecurityViolationError(Exception):
     pass
 
 class LocalProvider(StorageProvider):
+    # Common NAS and System directories to ignore
+    IGNORED_DIRS = {
+        '@Recycle', '#recycle', '#Recycle', # Synology/QNAP
+        '$RECYCLE.BIN', 'System Volume Information', # Windows
+        '.Trash', '.trash', '.Trashes', # Linux/macOS
+        '@eaDir', '.@__thumb', # Metadata folders
+        '#snapshot' # Snapshots
+    }
+
     def __init__(self, allowed_roots: List[str] = None):
         """
         allowed_roots: List of absolute paths that are allowed to be accessed.
@@ -40,6 +49,15 @@ class LocalProvider(StorageProvider):
             try:
                 # Skip hidden files or system dirs if needed
                 if item.name.startswith('.'): continue
+                
+                # Check for ignored directories in path parts
+                # If any part of the relative path (from root p) matches an ignored dir, skip it
+                try:
+                    rel_parts = item.relative_to(p).parts
+                    if any(part in self.IGNORED_DIRS for part in rel_parts):
+                        continue
+                except ValueError:
+                    pass # Should not happen usually
                 
                 yield FileEntry(
                     path=str(item.absolute()),

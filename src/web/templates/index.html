@@ -14,6 +14,8 @@
         .confidence-high { color: green; }
         .confidence-med { color: orange; }
         .confidence-low { color: red; }
+        .card.status-uncertain { border: 2px solid #ffc107; }
+        .badge-uncertain { background-color: #ffc107 !important; color: #000; }
         .original-badge {
             position: absolute;
             top: 10px;
@@ -49,6 +51,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item"><a class="nav-link active" href="/">Gallery</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/?filter=uncertain">⚠️ Uncertain</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin">Admin & Tasks</a></li>
                 </ul>
                 <form class="d-flex" action="/" method="get">
@@ -66,8 +69,9 @@
 
         <div class="row row-cols-1 row-cols-md-3 row-cols-lg-4 g-4">
             {% for photo in photos %}
+            {% set is_uncertain = (photo.primary_bird_cn == '待确认鸟种' or photo.scientific_name == 'Uncertain') %}
             <div class="col">
-                <div class="card h-100 shadow-sm">
+                <div class="card h-100 shadow-sm {{ 'status-uncertain' if is_uncertain else '' }}">
                     <div class="position-relative">
                         <!-- Image: Toggle between processed and raw -->
                         <img src="{{ photo.web_processed_path }}" 
@@ -79,7 +83,12 @@
                     </div>
                     
                     <div class="card-body">
-                        <h5 class="card-title">{{ photo.primary_bird_cn }}</h5>
+                        <h5 class="card-title">
+                            {{ photo.primary_bird_cn }}
+                            {% if is_uncertain %}
+                            <span class="badge badge-uncertain small align-top">?</span>
+                            {% endif %}
+                        </h5>
                         <h6 class="card-subtitle mb-2 text-muted fst-italic">{{ photo.scientific_name }}</h6>
                         
                         <div class="d-flex justify-content-between align-items-center mb-2">

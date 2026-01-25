@@ -195,22 +195,26 @@ class StartPipelineRequest(BaseModel):
 # --- Routes ---
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, q: str = ""):
+def index(request: Request, q: str = "", filter: str = ""):
     conn = get_db_conn()
     cursor = conn.cursor()
     
+    query_parts = []
+    params = []
+    
     if q:
-        query = f"%{q}%"
-        cursor.execute('''
-            SELECT * FROM photos 
-            WHERE primary_bird_cn LIKE ? 
-               OR scientific_name LIKE ? 
-               OR location_tag LIKE ? 
-               OR captured_date LIKE ?
-            ORDER BY captured_date DESC
-        ''', (query, query, query, query))
-    else:
-        cursor.execute('SELECT * FROM photos ORDER BY captured_date DESC LIMIT 50')
+        query_parts.append('(primary_bird_cn LIKE ? OR scientific_name LIKE ? OR location_tag LIKE ? OR captured_date LIKE ?)')
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
+    
+    if filter == 'uncertain':
+        query_parts.append('(primary_bird_cn = ? OR scientific_name = ?)')
+        params.extend(['待确认鸟种', 'Uncertain'])
+    
+    where_clause = "WHERE " + " AND ".join(query_parts) if query_parts else ""
+    
+    sql = f'SELECT * FROM photos {where_clause} ORDER BY captured_date DESC LIMIT 50'
+    
+    cursor.execute(sql, params)
     
     photos = cursor.fetchall()
     
@@ -356,8 +360,9 @@ def update_label(req: UpdateLabelRequest):
     manager = IOCManager(str(db_path))
     
     # 1. Fetch photo details BEFORE update to get file paths
-    manager.cursor.execute("SELECT * FROM photos WHERE id = ?", (req.photo_id,))
-    photo = manager.cursor.fetchone()
+    # Use conn.execute directly as manager.cursor is removed
+    cursor = manager.conn.execute("SELECT * FROM photos WHERE id = ?", (req.photo_id,))
+    photo = cursor.fetchone()
     
     if not photo:
         manager.close()

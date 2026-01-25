@@ -9,12 +9,12 @@ class IOCManager:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
+        # Removed persistent self.cursor for thread safety
         self._init_db()
 
     def _init_db(self):
         # Taxonomy Table
-        self.cursor.execute('''
+        self.conn.execute('''
             CREATE TABLE IF NOT EXISTS taxonomy (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 scientific_name TEXT UNIQUE,
@@ -24,12 +24,11 @@ class IOCManager:
             )
         ''')
         # Create index for faster search
-        self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_sci_name ON taxonomy(scientific_name)')
-        self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_cn_name ON taxonomy(chinese_name)')
+        self.conn.execute('CREATE INDEX IF NOT EXISTS idx_sci_name ON taxonomy(scientific_name)')
+        self.conn.execute('CREATE INDEX IF NOT EXISTS idx_cn_name ON taxonomy(chinese_name)')
 
         # Photos Table
-        # Added file_hash and original_path for deduplication and raw mapping
-        self.cursor.execute('''
+        self.conn.execute('''
             CREATE TABLE IF NOT EXISTS photos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_path TEXT,
@@ -47,7 +46,7 @@ class IOCManager:
         ''')
 
         # Scan History Table
-        self.cursor.execute('''
+        self.conn.execute('''
             CREATE TABLE IF NOT EXISTS scan_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 start_time TEXT,
@@ -60,16 +59,16 @@ class IOCManager:
             )
         ''')
         
-        # Migration: Check if new columns exist, if not add them (for existing dbs)
+        # Migration
         try:
-            self.cursor.execute("SELECT file_hash, original_path, candidates_json FROM photos LIMIT 1")
+            self.conn.execute("SELECT file_hash, original_path, candidates_json FROM photos LIMIT 1")
         except sqlite3.OperationalError:
             logging.info("Migrating database: Adding new columns...")
-            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN file_hash TEXT")
+            try: self.conn.execute("ALTER TABLE photos ADD COLUMN file_hash TEXT")
             except: pass
-            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN original_path TEXT")
+            try: self.conn.execute("ALTER TABLE photos ADD COLUMN original_path TEXT")
             except: pass
-            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN candidates_json TEXT")
+            try: self.conn.execute("ALTER TABLE photos ADD COLUMN candidates_json TEXT")
             except: pass
             self.conn.commit()
 
@@ -82,22 +81,19 @@ class IOCManager:
         logging.info(f"Importing taxonomy from {excel_path}...")
         try:
             df = pd.read_excel(excel_path)
-            # Normalize column names just in case
             df.columns = [c.strip() for c in df.columns]
             
-            # Prepare data
             records = []
             for _, row in df.iterrows():
                 sci = str(row.get('IOC_15.1', '')).strip()
                 cn = str(row.get('Chinese', '')).strip()
                 fam = str(row.get('Family', '')).strip()
                 ordr = str(row.get('Order', '')).strip()
-                
                 if sci and sci != 'nan':
                     records.append((sci, cn, fam, ordr))
             
             # Bulk upsert
-            self.cursor.executemany('''
+            self.conn.executemany('''
                 INSERT OR REPLACE INTO taxonomy (scientific_name, chinese_name, family_cn, order_cn)
                 VALUES (?, ?, ?, ?)
             ''', records)
@@ -108,21 +104,15 @@ class IOCManager:
             logging.error(f"Failed to import Excel: {e}")
 
     def get_bird_info(self, scientific_name: str) -> Optional[Dict]:
-        self.cursor.execute("SELECT * FROM taxonomy WHERE scientific_name=?", (scientific_name,))
-        row = self.cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
+        cursor = self.conn.execute("SELECT * FROM taxonomy WHERE scientific_name=?", (scientific_name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
     def search_species(self, query: str, limit: int = 20) -> List[Dict]:
-        """
-        Search for species by Latin or Chinese name.
-        Prioritizes Chinese name matches and shorter names.
-        """
         q_like = f"%{query}%"
         q_start = f"{query}%"
         
-        self.cursor.execute('''
+        cursor = self.conn.execute('''
             SELECT scientific_name, chinese_name,
             CASE 
                 WHEN chinese_name = ? THEN 1
@@ -135,15 +125,12 @@ class IOCManager:
             ORDER BY relevance ASC, LENGTH(chinese_name) ASC
             LIMIT ?
         ''', (query, q_start, q_like, q_like, q_like, limit))
-        return [dict(row) for row in self.cursor.fetchall()]
+        return [dict(row) for row in cursor.fetchall()]
 
     def check_hash_exists(self, file_hash: str) -> bool:
-        """
-        Check if a file with this hash has already been processed.
-        """
         if not file_hash: return False
-        self.cursor.execute("SELECT 1 FROM photos WHERE file_hash = ? LIMIT 1", (file_hash,))
-        return self.cursor.fetchone() is not None
+        cursor = self.conn.execute("SELECT 1 FROM photos WHERE file_hash = ? LIMIT 1", (file_hash,))
+        return cursor.fetchone() is not None
 
     def add_photo_record(self, record: Dict):
         keys = ', '.join(record.keys())
@@ -151,12 +138,12 @@ class IOCManager:
         values = tuple(record.values())
         
         sql = f"INSERT INTO photos ({keys}) VALUES ({placeholders})"
-        self.cursor.execute(sql, values)
+        cursor = self.conn.execute(sql, values)
         self.conn.commit()
-        return self.cursor.lastrowid
+        return cursor.lastrowid
         
     def update_photo_species(self, photo_id: int, scientific_name: str, chinese_name: str):
-        self.cursor.execute('''
+        self.conn.execute('''
             UPDATE photos 
             SET scientific_name = ?, primary_bird_cn = ?, confidence_score = 1.0
             WHERE id = ?
@@ -164,25 +151,17 @@ class IOCManager:
         self.conn.commit()
 
     def add_scan_history(self, record: Dict):
-        """
-        Record: {
-            'start_time': str, 'end_time': str,
-            'range_start': str, 'range_end': str,
-            'processed_count': int, 'duration_seconds': float,
-            'status': str
-        }
-        """
         keys = ', '.join(record.keys())
         placeholders = ', '.join(['?'] * len(record))
         values = tuple(record.values())
         
         sql = f"INSERT INTO scan_history ({keys}) VALUES ({placeholders})"
-        self.cursor.execute(sql, values)
+        self.conn.execute(sql, values)
         self.conn.commit()
 
     def get_recent_scans(self, limit: int = 5) -> List[Dict]:
-        self.cursor.execute("SELECT * FROM scan_history ORDER BY id DESC LIMIT ?", (limit,))
-        return [dict(row) for row in self.cursor.fetchall()]
+        cursor = self.conn.execute("SELECT * FROM scan_history ORDER BY id DESC LIMIT ?", (limit,))
+        return [dict(row) for row in cursor.fetchall()]
 
     def close(self):
         self.conn.close()

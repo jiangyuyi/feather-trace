@@ -1,15 +1,15 @@
 paths:
   # Security: Only allow access to these root directories (for Web UI and LocalProvider)
   allowed_roots:
-    - "D:/Code/gemini/feather_trace/data"
-  #  - "Y:/1按年份/2026"
+  #  - "D:/Code/gemini/feather_trace/data"
+    - "Y:/1按年份/2026"
     
   # Deprecated: raw_dir (use sources below)
   # raw_dir: "data/raw" 
   
   sources:
-    - path: "data/raw"
-  #  - path: "Y:/1按年份/2026"
+  #  - path: "data/raw"
+    - path: "Y:/1按年份/2026"
       recursive: true
       enabled: true
       # Optional: Regex pattern to extract metadata from folder structure
@@ -57,11 +57,13 @@ recognition:
   region_filter: "auto"  # options: null (world), "china", "auto"
   top_k: 5
   alternatives_threshold: 70 # If top match confidence > this, don't show alternatives
+  low_confidence_threshold: 60 # If top match confidence < this, mark as "Uncertain"
   
   # BioCLIP Local Configuration
   local:
     model_type: "bioclip-2" # options: "bioclip", "bioclip-2"
-    batch_size: 512
+    batch_size: 512 # Text encoding batch size (large is fine)
+    inference_batch_size: 16 # Image inference batch size (adjust based on VRAM, 16-32 recommended)
   
   # BioCLIP API Configuration (HuggingFace)
   api:

@@ -85,14 +85,25 @@ class LocalBirdRecognizer(BirdRecognizer):
         
         # Ensure tokenizer is ready
         self.tokenizer = open_clip.get_tokenizer('ViT-B-16')
+        
+        # Verify model device
+        try:
+            param_device = next(self.model.parameters()).device
+            logging.info(f"Model loaded successfully. Model parameters are on: {param_device}")
+            if self.device == 'cuda' and param_device.type == 'cpu':
+                logging.warning("CRITICAL: Model requested on CUDA but parameters are on CPU!")
+        except Exception as e:
+            logging.warning(f"Could not verify model device: {e}")
+            
         logging.info("Model loaded successfully.")
 
     def _get_text_features(self, candidate_labels):
         # Check if cache is valid
         if self.cached_labels == candidate_labels and self.cached_text_features is not None:
+            logging.debug("Text features cache hit.")
             return self.cached_text_features
 
-        logging.info(f"Encoding {len(candidate_labels)} text labels (this may take a moment)...")
+        logging.info(f"Cache miss. Encoding {len(candidate_labels)} text labels (this may take a moment)...")
         
         prompted_labels = [f"a photo of {label}, a type of bird." for label in candidate_labels]
         tokens = self.tokenizer(prompted_labels) # CPU tensor first
@@ -120,6 +131,81 @@ class LocalBirdRecognizer(BirdRecognizer):
         logging.info("Text features encoded and cached.")
         
         return all_text_features
+
+    def predict_batch(self, image_paths: List[str], candidate_labels: List[str], top_k: int = 5) -> List[List[Dict[str, Any]]]:
+        """
+        Predict a batch of images.
+        Returns a list of result lists (one result list per image).
+        """
+        if not candidate_labels:
+            return [[] for _ in image_paths]
+            
+        try:
+            return self._do_predict_batch(image_paths, candidate_labels, top_k)
+        except RuntimeError as e:
+            if "CUDA" in str(e) and self.device != "cpu":
+                logging.warning(f"CUDA batch prediction failed: {e}. Falling back to CPU.")
+                original_device = self.device
+                self.device = "cpu"
+                self.model.to("cpu")
+                self.cached_text_features = None
+                res = self._do_predict_batch(image_paths, candidate_labels, top_k)
+                return res
+            else:
+                logging.error(f"Batch recognition error: {e}")
+                return [[] for _ in image_paths]
+
+    def _do_predict_batch(self, image_paths, candidate_labels, top_k):
+        # 1. Prepare Images
+        images_tensors = []
+        valid_indices = []
+        
+        for idx, path in enumerate(image_paths):
+            try:
+                img = Image.open(path)
+                tensor = self.preprocess(img)
+                images_tensors.append(tensor)
+                valid_indices.append(idx)
+            except Exception as e:
+                logging.error(f"Failed to load image for batch {path}: {e}")
+        
+        if not images_tensors:
+            return [[] for _ in image_paths]
+            
+        # Stack: [B, C, H, W]
+        image_input = torch.stack(images_tensors).to(self.device)
+        
+        # 2. Get Text Features (Cached)
+        text_features = self._get_text_features(candidate_labels)
+        
+        # 3. Inference
+        device_type = 'cuda' if 'cuda' in self.device else 'cpu'
+        with torch.no_grad(), torch.amp.autocast(device_type=device_type, enabled=(device_type == 'cuda')):
+            image_features = self.model.encode_image(image_input)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            
+            # MatMul: [B, Dim] @ [Dim, N_Labels] -> [B, N_Labels]
+            text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+            
+        # 4. Process Results
+        batch_results = [[] for _ in image_paths] # Default empty
+        
+        # Get Top K for the whole batch
+        # topk returns values, indices with shape [B, K]
+        top_probs, top_indices = text_probs.topk(min(top_k, len(candidate_labels)), dim=1)
+        
+        for i, original_idx in enumerate(valid_indices):
+            res_list = []
+            for k in range(top_probs.shape[1]):
+                idx = top_indices[i, k].item()
+                prob = top_probs[i, k].item()
+                res_list.append({
+                    "scientific_name": candidate_labels[idx],
+                    "confidence": prob
+                })
+            batch_results[original_idx] = res_list
+            
+        return batch_results
 
     def predict(self, image_path: str, candidate_labels: List[str], top_k: int = 5) -> List[Dict[str, Any]]:
         """

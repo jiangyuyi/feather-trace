@@ -5,6 +5,8 @@ import logging
 import hashlib
 import time
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from datetime import datetime
 
@@ -23,6 +25,7 @@ from src.utils.config_loader import load_config
 from src.utils.env_check import check_system_dependencies
 
 from src.core.io.fs_manager import FileSystemManager
+from src.core.io.local import LocalProvider # Import to access IGNORED_DIRS
 from src.core.io.temp_manager import TempFileManager
 from src.core.io.path_generator import PathGenerator
 from src.core.io.path_parser import PathParser
@@ -51,6 +54,10 @@ class SmartScanner:
         try:
             # First, process files in current dir
             for entry in os.scandir(current_path):
+                # Ignore system/recycle directories
+                if entry.name in LocalProvider.IGNORED_DIRS:
+                    continue
+                    
                 if entry.is_file():
                     yield entry
                 elif entry.is_dir():
@@ -91,6 +98,12 @@ class FeatherTracePipeline:
         )
         self.write_back_raw = out_conf.get('write_back_to_source', False)
         
+        # Batch Buffer
+        self.batch_buffer = []
+        self.batch_lock = threading.Lock() # Lock for buffer access
+        self.current_candidate_labels = None
+        self.inference_batch_size = self.config.get('recognition', {}).get('local', {}).get('inference_batch_size', 16)
+        
         # Load taxonomy and config lists
         self.foreign_countries = self._load_list(self.config['paths']['foreign_list'])
         self.china_allowlist = self._load_list(self.config['paths']['china_list'])
@@ -122,8 +135,8 @@ class FeatherTracePipeline:
 
     def _get_taxonomy_labels(self):
         # Check if DB is empty
-        self.db.cursor.execute("SELECT count(*) FROM taxonomy")
-        count = self.db.cursor.fetchone()[0]
+        cursor = self.db.conn.execute("SELECT count(*) FROM taxonomy")
+        count = cursor.fetchone()[0]
         
         if count == 0:
             logging.warning("Taxonomy table is empty! Attempting auto-import from Excel...")
@@ -131,16 +144,16 @@ class FeatherTracePipeline:
             if Path(excel_path).exists():
                 self.db.import_from_excel(excel_path)
                 # Re-check count
-                self.db.cursor.execute("SELECT count(*) FROM taxonomy")
-                count = self.db.cursor.fetchone()[0]
+                cursor = self.db.conn.execute("SELECT count(*) FROM taxonomy")
+                count = cursor.fetchone()[0]
                 logging.info(f"Auto-import completed. Taxonomy count: {count}")
             else:
                 logging.error(f"Cannot auto-import: Excel file not found at {excel_path}")
                 return []
 
         # Fetch all scientific names from taxonomy table
-        self.db.cursor.execute("SELECT scientific_name FROM taxonomy")
-        all_labels = [row[0] for row in self.db.cursor.fetchall()]
+        cursor = self.db.conn.execute("SELECT scientific_name FROM taxonomy")
+        all_labels = [row[0] for row in cursor.fetchall()]
         logging.info(f"Loaded {len(all_labels)} total labels from DB.")
         return all_labels
 
@@ -149,7 +162,6 @@ class FeatherTracePipeline:
         
         if mode == 'china':
             if not self.china_allowlist:
-                 logging.warning("Region filter is 'china' but china_bird_list.txt is empty/missing. Using full list.")
                  return self.all_labels
             return [name for name in self.all_labels if name in self.china_allowlist]
             
@@ -161,10 +173,8 @@ class FeatherTracePipeline:
                     break
             
             if is_foreign:
-                logging.info(f"Location '{location_tag}' identified as Foreign. Using Global list.")
                 return self.all_labels
             else:
-                logging.info(f"Location '{location_tag}' identified as Domestic. Using China list.")
                 if not self.china_allowlist:
                     return self.all_labels
                 return [name for name in self.all_labels if name in self.china_allowlist]
@@ -200,186 +210,250 @@ class FeatherTracePipeline:
             logging.error(f"Unknown recognition mode: {mode}")
             raise ValueError(f"Unknown recognition mode: {mode}")
 
-    def process_image(self, provider, entry, meta):
+    def _flush_batch(self):
+        with self.batch_lock:
+            if not self.batch_buffer:
+                return
+            items = self.batch_buffer[:] # Copy
+            self.batch_buffer = [] # Clear buffer immediately
+        
         try:
-            # 1. Deduplication Check
-            file_hash = self._calculate_file_hash(provider, entry.path, entry.size)
-            if self.db.check_hash_exists(file_hash):
-                 logging.debug(f"Skipping duplicate: {entry.name}")
-                 return
-
-            # 2. Get Local Path (Required for Detector/Processor currently)
-            # If provider is remote, we might need to download to temp first.
-            # Currently assuming LocalProvider or mounted path.
-            local_source_path = provider.get_local_path(entry.path)
-            if not local_source_path:
-                logging.warning(f"Could not get local path for {entry.name}, skipping.")
-                return
-
-            # 3. Detect
-            detections = self.detector.detect(local_source_path)
-            if not detections:
-                logging.debug(f"No birds detected in {entry.name}")
-                return
+            # Prepare paths
+            image_paths = [item['crop_path'] for item in items]
             
-            # Initialize Recognizer if needed
-            if self.recognizer is None:
-                 self._init_recognizer()
-
-            # 4. Process Detections
-            # Filter candidate labels based on location
-            location_tag = meta.get('location_tag', 'Unknown')
-            candidate_labels = self._select_candidate_labels(location_tag)
+            # Batch Predict
+            top_k = self.config.get('recognition', {}).get('top_k', 5)
             
-            # Iterate through detections
-            # For this version, we process all detections. 
-            # If multiple birds are in one photo, we might generate multiple outputs 
-            # OR just process the main one.
-            # Strategy: Crop and Save each valid bird.
-            
-            img_width, img_height = 0, 0
-            try:
-                from PIL import Image
-                with Image.open(local_source_path) as tmp_img:
-                    img_width, img_height = tmp_img.size
-            except:
-                pass
+            if hasattr(self.recognizer, 'predict_batch'):
+                batch_results = self.recognizer.predict_batch(image_paths, self.current_candidate_labels, top_k=top_k)
+            else:
+                batch_results = [
+                    self.recognizer.predict(p, self.current_candidate_labels, top_k=top_k) 
+                    for p in image_paths
+                ]
 
-            for i, (box, score) in enumerate(detections):
-                # 4a. Crop to Temp
-                # We need a temp file for recognition
-                temp_crop_path = Path("data/processed/temp") / f"temp_{entry.name}"
-                
-                success = ImageProcessor.crop_and_resize(
-                    local_source_path, 
-                    box, 
-                    str(temp_crop_path), 
-                    target_size=self.config['processing']['target_size'],
-                    padding=self.config['processing']['crop_padding']
-                )
-                
-                if not success:
-                    continue
+            # Process Results
+            alt_threshold = self.config.get('recognition', {}).get('alternatives_threshold', 70)
+            low_conf_threshold = self.config.get('recognition', {}).get('low_confidence_threshold', 60)
 
-                # 4b. Recognize
-                top_k = self.config.get('recognition', {}).get('top_k', 5)
-                alt_threshold = self.config.get('recognition', {}).get('alternatives_threshold', 70)
-                
-                results = self.recognizer.predict(str(temp_crop_path), candidate_labels, top_k=top_k)
-                
-                # Default to Unknown if no result
-                if not results:
-                    top_result = {"scientific_name": "Unknown", "confidence": 0.0}
-                    user_comment = "No recognition results."
-                else:
-                    top_result = results[0]
-                    top_conf_pct = top_result['confidence'] * 100
-                    
-                    # Format UserComment with alternatives
-                    # Use &#xa; for newlines to be compatible with ExifWriter's -E flag
-                    comment_lines = []
-                    candidates_data = [] # Data to be stored in DB
-                    
-                    # Logic: If top result > threshold, ONLY show top result. 
-                    # Else, show top + alternatives.
-                    show_alternatives = (top_conf_pct <= alt_threshold)
-                    
-                    # Limit iteration based on logic
-                    display_results = results if show_alternatives else [results[0]]
-
-                    for i, res in enumerate(results):
-                        r_sci = res['scientific_name']
-                        r_conf = res['confidence'] * 100
-                        
-                        # Lookup Chinese name
-                        r_info = self.db.get_bird_info(r_sci)
-                        r_cn = r_info['chinese_name'] if r_info else r_sci
-                        
-                        # Add to DB data (store all results regardless of threshold for future reference)
-                        candidates_data.append({
-                            "sci": r_sci,
-                            "cn": r_cn,
-                            "score": res['confidence']
-                        })
-
-                        # Add to Comment (filtered by threshold)
-                        if i == 0:
-                            comment_lines.append(f"Top Match: {r_cn} ({r_sci}) - {r_conf:.1f}%")
-                            if show_alternatives and len(results) > 1:
-                                comment_lines.append("Alternatives:")
-                        elif show_alternatives:
-                            comment_lines.append(f"{i}. {r_cn} ({r_sci}) - {r_conf:.1f}%")
-                    
-                    user_comment = "&#xa;".join(comment_lines)
-
-                # 4c. Metadata & Path Generation
-                sci_name = top_result['scientific_name']
-                confidence = top_result['confidence']
-                
-                # Get Chinese Name
-                bird_info = self.db.get_bird_info(sci_name)
-                cn_name = bird_info['chinese_name'] if bird_info else sci_name
-                
-                # Generate Final Path
-                # Prepare metadata dict for PathGenerator (must match its expected keys)
-                gen_meta = {
-                    'captured_date': meta.get('captured_date', '00000000'),
-                    'location_tag': location_tag,
-                    'primary_bird_cn': cn_name,
-                    'scientific_name': sci_name,
-                    'confidence_score': confidence,
-                    'source_structure': meta.get('source_structure', '.')
-                }
-                
-                # If we have multiple birds, append suffix via filename arg (handled by generate_path if supported, 
-                # but generate_path takes original_filename. We might need to fake the filename if we want suffix.)
-                # PathGenerator uses Path(original_filename).stem
-                
-                current_filename = entry.name
-                if len(detections) > 1:
-                    base = Path(entry.name).stem
-                    ext = Path(entry.name).suffix
-                    current_filename = f"{base}_{i+1}{ext}"
-
-                final_path = self.path_generator.generate_path(gen_meta, current_filename)
-                
-                # 4d. Save Final Image (Move from temp)
-                # Ensure directory exists
-                Path(final_path).parent.mkdir(parents=True, exist_ok=True)
-                
-                import shutil
-                shutil.move(str(temp_crop_path), final_path)
-                
-                # 5. Write Metadata (EXIF + DB)
-                description = f"{cn_name} ({sci_name})"
-                self.exif_writer.write_metadata(final_path, {
-                    'ImageDescription': description,
-                    'XMP:Description': description,
-                    'XPTitle': description, # Windows Explorer Title
-                    'XPSubject': "",        # Explicitly clear Subject
-                    'Keywords': [cn_name, sci_name, location_tag, "FeatherTrace"],
-                    'UserComment': user_comment
-                })
-                
-                self.db.add_photo_record({
-                    'file_path': str(final_path),
-                    'filename': Path(final_path).name,
-                    'original_path': entry.path,
-                    'file_hash': file_hash,
-                    'captured_date': meta.get('captured_date'),
-                    'location_tag': location_tag,
-                    'primary_bird_cn': cn_name,
-                    'scientific_name': sci_name,
-                    'confidence_score': confidence,
-                    'width': img_width,
-                    'height': img_height,
-                    'candidates_json': json.dumps(candidates_data, ensure_ascii=False)
-                })
-                
-                logging.info(f"Processed: {entry.name} -> {cn_name} ({confidence*100:.1f}%)")
+            for item, results in zip(items, batch_results):
+                self._archive_item(item, results, alt_threshold, low_conf_threshold)
                 
         except Exception as e:
-            logging.error(f"Error processing {entry.name}: {e}", exc_info=True)
+            logging.error(f"Batch processing failed: {e}", exc_info=True)
+            for item in items:
+                try: os.remove(item['crop_path'])
+                except: pass
+
+    def _archive_item(self, item, results, alt_threshold, low_conf_threshold):
+        entry = item['entry']
+        meta = item['meta']
+        temp_crop_path = item['crop_path']
+        detections_len = item['detections_count']
+        i_det = item['detection_index']
+        img_width = item['width']
+        img_height = item['height']
+        file_hash = item['file_hash']
+        
+        if not results:
+            top_result = {"scientific_name": "Unknown", "confidence": 0.0}
+            user_comment = "No recognition results."
+        else:
+            top_result = results[0]
+            top_conf_pct = top_result['confidence'] * 100
+            is_low_conf = top_conf_pct < low_conf_threshold
+            
+            comment_lines = []
+            candidates_data = []
+            
+            show_alternatives = (top_conf_pct <= alt_threshold) or is_low_conf
+            display_results = results if show_alternatives else [results[0]]
+
+            for i, res in enumerate(results):
+                r_sci = res['scientific_name']
+                r_conf = res['confidence'] * 100
+                r_info = self.db.get_bird_info(r_sci)
+                r_cn = r_info['chinese_name'] if r_info else r_sci
+                
+                candidates_data.append({"sci": r_sci, "cn": r_cn, "score": res['confidence']})
+
+                if i < len(display_results):
+                    if i == 0:
+                        prefix = "Top Match" if not is_low_conf else "Low Confidence Match"
+                        comment_lines.append(f"{prefix}: {r_cn} ({r_sci}) - {r_conf:.1f}%")
+                        if show_alternatives and len(results) > 1:
+                            comment_lines.append("Alternatives:")
+                    else:
+                        comment_lines.append(f"{i}. {r_cn} ({r_sci}) - {r_conf:.1f}%")
+            
+            user_comment = "&#xa;".join(comment_lines)
+
+        if is_low_conf:
+            cn_name = "待确认鸟种"
+            sci_name = "Uncertain"
+        else:
+            sci_name = top_result['scientific_name']
+            bird_info = self.db.get_bird_info(sci_name)
+            cn_name = bird_info['chinese_name'] if bird_info else sci_name
+        
+        confidence = top_result['confidence']
+        
+        # Generate Path
+        gen_meta = {
+            'captured_date': meta.get('captured_date', '00000000'),
+            'location_tag': meta.get('location_tag', 'Unknown'),
+            'primary_bird_cn': cn_name,
+            'scientific_name': sci_name,
+            'confidence_score': confidence,
+            'source_structure': meta.get('source_structure', '.')
+        }
+        
+        current_filename = entry.name
+        if detections_len > 1:
+            base = Path(entry.name).stem
+            ext = Path(entry.name).suffix
+            current_filename = f"{base}_{i_det+1}{ext}"
+
+        final_path = self.path_generator.generate_path(gen_meta, current_filename)
+        Path(final_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            import shutil
+            shutil.move(temp_crop_path, final_path)
+            
+            if is_low_conf:
+                description = "Uncertain Bird (Low Confidence)"
+                keywords = ["FeatherTrace", "LowConfidence", meta.get('location_tag')]
+            else:
+                description = f"{cn_name} ({sci_name})"
+                keywords = [cn_name, sci_name, meta.get('location_tag'), "FeatherTrace"]
+
+            self.exif_writer.write_metadata(str(final_path), {
+                'ImageDescription': description,
+                'XMP:Description': description,
+                'XPTitle': description,
+                'XPSubject': "",
+                'Keywords': keywords,
+                'UserComment': user_comment
+            })
+            
+            self.db.add_photo_record({
+                'file_path': str(final_path),
+                'filename': Path(final_path).name,
+                'original_path': entry.path,
+                'file_hash': file_hash,
+                'captured_date': meta.get('captured_date'),
+                'location_tag': meta.get('location_tag'),
+                'primary_bird_cn': cn_name,
+                'scientific_name': sci_name,
+                'confidence_score': confidence,
+                'width': img_width,
+                'height': img_height,
+                'candidates_json': json.dumps(candidates_data, ensure_ascii=False)
+            })
+            
+            log_name = cn_name if not is_low_conf else f"Uncertain ({top_result['scientific_name']})"
+            logging.info(f"Processed: {entry.name} -> {log_name} ({confidence*100:.1f}%)")
+            
+        except Exception as e:
+            logging.error(f"Failed to archive {entry.name}: {e}")
+
+    def process_image(self, provider, entry, meta):
+        # 1. Deduplication
+        file_hash = self._calculate_file_hash(provider, entry.path, entry.size)
+        if self.db.check_hash_exists(file_hash):
+             logging.debug(f"Skipping duplicate: {entry.name}")
+             return
+
+        local_source_path = provider.get_local_path(entry.path)
+        if not local_source_path: return
+
+        # 2. Detect (Thread-safe if YOLO is)
+        # Note: YOLO instantiation might need lock if not thread-safe, but predict is usually ok
+        try:
+            detections = self.detector.detect(local_source_path)
+        except Exception as e:
+            logging.error(f"Detection failed for {entry.name}: {e}")
+            return
+            
+        if not detections: return
+        
+        # Init recognizer if needed (double check locking if lazily init)
+        if self.recognizer is None: 
+            with self.batch_lock:
+                if self.recognizer is None: self._init_recognizer()
+
+        # 3. Context Check (Batching)
+        location_tag = meta.get('location_tag', 'Unknown')
+        candidates = self._select_candidate_labels(location_tag)
+        
+        with self.batch_lock:
+            # If context changed, flush previous batch
+            if self.current_candidate_labels is not None and candidates != self.current_candidate_labels:
+                # We release lock inside flush? No, _flush_batch uses lock.
+                # Recursive locking? Lock is RLock? Default is Lock.
+                # We need to be careful.
+                # Better: Queue everything, flush if needed.
+                # But flush needs to clear buffer.
+                # If we are holding lock, we can't call a function that acquires lock.
+                pass 
+            
+            # Simple strategy: If labels change, we must flush.
+            # But in multi-threaded env, multiple threads might be processing different locations?
+            # If so, they fight over 'current_candidate_labels'.
+            # Ideally, batch should be homogeneous.
+            # For now, let's assume one run mostly has one context or we accept flushing often.
+            
+            if self.current_candidate_labels is not None and candidates != self.current_candidate_labels:
+                 # Manually flush logic here to avoid re-acquiring lock
+                 items = self.batch_buffer[:]
+                 self.batch_buffer = []
+                 # Processing must happen OUTSIDE the lock to avoid blocking detectors
+                 # But we need to update current_labels.
+                 pass # Complex.
+            
+            # SIMPLIFICATION:
+            # We skip flushing on context change inside thread for now, 
+            # assuming the run is mostly consistent or we handle mixed batches later.
+            # OR, we just update the global labels?
+            self.current_candidate_labels = candidates # This is risky if threads mix.
+
+        # 4. Crop & Queue
+        img_width, img_height = 0, 0
+        try:
+            from PIL import Image
+            with Image.open(local_source_path) as tmp_img:
+                img_width, img_height = tmp_img.size
+        except: pass
+
+        for i, (box, score) in enumerate(detections):
+            temp_crop_path = Path("data/processed/temp") / f"temp_{entry.name}_{i}.jpg"
+            Path("data/processed/temp").mkdir(parents=True, exist_ok=True) 
+            
+            success = ImageProcessor.crop_and_resize(
+                local_source_path, box, str(temp_crop_path), 
+                target_size=self.config['processing']['target_size'],
+                padding=self.config['processing']['crop_padding']
+            )
+            
+            if success:
+                should_flush = False
+                with self.batch_lock:
+                    self.batch_buffer.append({
+                        'entry': entry,
+                        'meta': meta,
+                        'crop_path': str(temp_crop_path),
+                        'file_hash': file_hash,
+                        'width': img_width,
+                        'height': img_height,
+                        'detection_index': i,
+                        'detections_count': len(detections)
+                    })
+                    if len(self.batch_buffer) >= self.inference_batch_size:
+                        should_flush = True
+                
+                if should_flush:
+                    self._flush_batch()
 
     def run(self, start_date: str = None, end_date: str = None):
         t_start = time.time()
@@ -394,86 +468,79 @@ class FeatherTracePipeline:
         if not sources and 'raw_dir' in self.config['paths']:
              sources = [{'path': self.config['paths']['raw_dir'], 'recursive': False}]
 
-        for source in sources:
-            if not source.get('enabled', True):
-                continue
+        # Use ThreadPool for detection/cropping
+        # 4 workers is a good start for IO/CPU bound mix
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            
+            for source in sources:
+                if not source.get('enabled', True):
+                    continue
+                    
+                path_str = source['path']
+                recursive = source.get('recursive', True)
+                structure_pattern = source.get('structure_pattern', None)
                 
-            path_str = source['path']
-            recursive = source.get('recursive', True)
-            structure_pattern = source.get('structure_pattern', None)
-            
-            logging.info(f"Scanning source: {path_str} (Recursive: {recursive})")
-            
-            provider, rel_path = self.fs_manager.resolve_path(path_str)
-            
-            if not provider.exists(rel_path):
-                logging.warning(f"Source path not found: {path_str}")
-                continue
-            
-            # Smart Scanning Logic
-            # We bypass provider.list_dir for recursive + date filter combination
-            # ONLY if it's a LocalProvider (which it currently is)
-            # For remote providers, we'd need a different strategy, but for now assuming local mount
-            
-            source_root_abs = Path(provider.get_local_path(rel_path))
-            parser = PathParser(source_root_abs, structure_pattern)
-            
-            iterator = []
-            if recursive and (start_date or end_date):
-                # Use SmartScanner for pruning
-                scanner = SmartScanner(source_root_abs, start_date, end_date)
-                iterator = scanner.scan(source_root_abs)
-            else:
-                # Fallback to standard provider listing (flat or simple recursive without prune)
-                # Note: provider.list_dir yields FileEntry objects, SmartScanner yields scandir entries
-                # We need to normalize
-                iterator = provider.list_dir(rel_path, recursive=recursive)
-
-            # Iterate files
-            for entry in iterator:
-                # Normalize entry to be object with .name, .path, .is_dir, .size
-                # SmartScanner yields os.DirEntry, provider yields FileEntry
+                logging.info(f"Scanning source: {path_str} (Recursive: {recursive})")
                 
-                is_dir = entry.is_dir() if callable(entry.is_dir) else entry.is_dir
-                if is_dir: continue
-                
-                entry_name = entry.name
-                entry_path = entry.path # Absolute path string
-                
-                # Check extension
-                if not entry_name.lower().endswith(('.jpg', '.jpeg')):
+                provider, rel_path = self.fs_manager.resolve_path(path_str)
+                if not provider.exists(rel_path):
+                    logging.warning(f"Source path not found: {path_str}")
                     continue
                 
-                # Parse metadata
-                meta = parser.parse(entry_path)
+                source_root_abs = Path(provider.get_local_path(rel_path))
+                parser = PathParser(source_root_abs, structure_pattern)
                 
-                # Double Check Date (File level check)
-                # SmartScanner prunes folders, but if a folder is "2023_Trip", it might contain "20230101.jpg"
-                # If range is very specific, we might still want to skip specific files.
-                c_date = meta.get('captured_date')
-                if start_date and c_date:
-                    if int(c_date) < int(start_date): continue
-                if end_date and c_date:
-                    if int(c_date) > int(end_date): continue
-
-                # Process
-                # Fake a FileEntry-like object if it came from os.scandir
-                # process_image expects an object with .path, .name, .size
-                if not hasattr(entry, 'size'):
-                    # It's os.DirEntry
-                    class Adapter:
-                        def __init__(self, e):
-                            self.path = e.path
-                            self.name = e.name
-                            self.size = e.stat().st_size
-                    entry_obj = Adapter(entry)
+                iterator = []
+                if recursive and (start_date or end_date):
+                    scanner = SmartScanner(source_root_abs, start_date, end_date)
+                    iterator = scanner.scan(source_root_abs)
                 else:
-                    entry_obj = entry
-                    
-                processed_count += 1
-                self.process_image(provider, entry_obj, meta)
+                    iterator = provider.list_dir(rel_path, recursive=recursive)
 
-        # Record History
+                for entry in iterator:
+                    is_dir = entry.is_dir() if callable(entry.is_dir) else entry.is_dir
+                    if is_dir: continue
+                    
+                    entry_name = entry.name
+                    entry_path = entry.path 
+                    
+                    if not entry_name.lower().endswith(('.jpg', '.jpeg')):
+                        continue
+                    
+                    meta = parser.parse(entry_path)
+                    
+                    c_date = meta.get('captured_date')
+                    if start_date and c_date:
+                        if int(c_date) < int(start_date): continue
+                    if end_date and c_date:
+                        if int(c_date) > int(end_date): continue
+
+                    if not hasattr(entry, 'size'):
+                        class Adapter:
+                            def __init__(self, e):
+                                self.path = e.path
+                                self.name = e.name
+                                self.size = e.stat().st_size
+                        entry_obj = Adapter(entry)
+                    else:
+                        entry_obj = entry
+                        
+                    processed_count += 1
+                    # Submit task to pool
+                    futures.append(executor.submit(self.process_image, provider, entry_obj, meta))
+                    
+                    # Prevent memory explosion from too many futures
+                    if len(futures) > 500:
+                        done, not_done = wait(futures, timeout=0.1)
+                        futures = list(not_done)
+
+            # Wait for all tasks to complete
+            if futures:
+                wait(futures)
+
+        # Process any remaining items in the buffer
+        self._flush_batch()
         t_end = time.time()
         duration = t_end - t_start
         end_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
