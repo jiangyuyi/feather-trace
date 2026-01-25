@@ -67,10 +67,46 @@
                         <h5 class="mb-0">Batch Processing</h5>
                         <button id="start-btn" class="btn btn-light btn-sm">▶ Start Pipeline</button>
                     </div>
-                    <div class="card-body bg-dark">
+                    <div class="card-body bg-dark text-white">
+                        <!-- Date Range Filters -->
+                        <div class="row g-2 mb-3 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label small">Start Date</label>
+                                <input type="date" id="start-date" class="form-control form-control-sm bg-secondary text-white border-0">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">End Date</label>
+                                <input type="date" id="end-date" class="form-control form-control-sm bg-secondary text-white border-0">
+                            </div>
+                            <div class="col-md-4">
+                                <span class="small text-muted d-block mb-1">Filter by folder dates</span>
+                            </div>
+                        </div>
+
                         <div id="console" class="console-box">
                             <div>Ready. Waiting for command...</div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Recent History -->
+                <div class="card mb-4">
+                    <div class="card-header">Recent Scans</div>
+                    <div class="card-body p-0">
+                        <table class="table table-striped mb-0 text-center small">
+                            <thead>
+                                <tr>
+                                    <th>Start Time</th>
+                                    <th>Range</th>
+                                    <th>Processed</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body">
+                                <tr><td colspan="5">Loading...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -109,6 +145,7 @@
                 if (event.data.includes("Pipeline execution completed")) {
                     startBtn.disabled = false;
                     startBtn.textContent = "▶ Start Pipeline";
+                    loadHistory(); // Refresh history
                 }
             };
             
@@ -119,24 +156,68 @@
         }
         
         connectWS();
+        loadHistory();
+
+        // Load History
+        function loadHistory() {
+            fetch('/api/scan_history')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('history-body');
+                    tbody.innerHTML = '';
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5">No history yet.</td></tr>';
+                        return;
+                    }
+                    data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${row.start_time.split(' ')[0]}<br><small>${row.start_time.split(' ')[1]}</small></td>
+                            <td>${row.range_start}<br>⬇<br>${row.range_end}</td>
+                            <td>${row.processed_count}</td>
+                            <td>${row.duration_seconds}s</td>
+                            <td>${row.status}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
 
         // 2. Start Pipeline
         startBtn.addEventListener('click', () => {
-            if(!confirm("Start processing all sources?")) return;
+            const sDateRaw = document.getElementById('start-date').value;
+            const eDateRaw = document.getElementById('end-date').value;
+            
+            // Convert 2023-10-01 -> 20231001
+            const sDate = sDateRaw ? sDateRaw.replace(/-/g, '') : null;
+            const eDate = eDateRaw ? eDateRaw.replace(/-/g, '') : null;
+            
+            const msg = (sDate || eDate) 
+                ? `Start processing range [${sDate || 'Min'} - ${eDate || 'Max'}]?`
+                : "Start processing ALL sources? (This might take a while)";
+
+            if(!confirm(msg)) return;
             
             startBtn.disabled = true;
             startBtn.textContent = "⏳ Running...";
             consoleBox.innerHTML = "<div>Requesting start...</div>";
             
-            fetch('/api/pipeline/start', {method: 'POST'})
-                .then(r => r.json())
-                .then(data => {
-                    if(data.status === 'error') {
-                        alert(data.message);
-                        startBtn.disabled = false;
-                        startBtn.textContent = "▶ Start Pipeline";
-                    }
-                });
+            fetch('/api/pipeline/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    start_date: sDate,
+                    end_date: eDate
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.status === 'error') {
+                    alert(data.message);
+                    startBtn.disabled = false;
+                    startBtn.textContent = "▶ Start Pipeline";
+                }
+            });
         });
 
         // 3. Reset System

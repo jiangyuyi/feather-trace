@@ -44,7 +44,9 @@ class BirdDetector:
             for box in result.boxes:
                 if int(box.cls) == self.bird_class_id:
                     # Convert to list of floats [x1, y1, x2, y2]
-                    bird_boxes.append(box.xyxy[0].tolist())
+                    coords = box.xyxy[0].tolist()
+                    score = float(box.conf[0])
+                    bird_boxes.append((coords, score))
         
         return bird_boxes
 

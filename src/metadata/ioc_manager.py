@@ -45,17 +45,31 @@ class IOCManager:
                 height INTEGER
             )
         ''')
+
+        # Scan History Table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS scan_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_time TEXT,
+                end_time TEXT,
+                range_start TEXT,
+                range_end TEXT,
+                processed_count INTEGER,
+                duration_seconds REAL,
+                status TEXT
+            )
+        ''')
         
         # Migration: Check if new columns exist, if not add them (for existing dbs)
         try:
-            self.cursor.execute("SELECT file_hash, original_path FROM photos LIMIT 1")
+            self.cursor.execute("SELECT file_hash, original_path, candidates_json FROM photos LIMIT 1")
         except sqlite3.OperationalError:
-            logging.info("Migrating database: Adding file_hash and original_path columns...")
-            try:
-                self.cursor.execute("ALTER TABLE photos ADD COLUMN file_hash TEXT")
+            logging.info("Migrating database: Adding new columns...")
+            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN file_hash TEXT")
             except: pass
-            try:
-                self.cursor.execute("ALTER TABLE photos ADD COLUMN original_path TEXT")
+            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN original_path TEXT")
+            except: pass
+            try: self.cursor.execute("ALTER TABLE photos ADD COLUMN candidates_json TEXT")
             except: pass
             self.conn.commit()
 
@@ -148,6 +162,27 @@ class IOCManager:
             WHERE id = ?
         ''', (scientific_name, chinese_name, photo_id))
         self.conn.commit()
+
+    def add_scan_history(self, record: Dict):
+        """
+        Record: {
+            'start_time': str, 'end_time': str,
+            'range_start': str, 'range_end': str,
+            'processed_count': int, 'duration_seconds': float,
+            'status': str
+        }
+        """
+        keys = ', '.join(record.keys())
+        placeholders = ', '.join(['?'] * len(record))
+        values = tuple(record.values())
+        
+        sql = f"INSERT INTO scan_history ({keys}) VALUES ({placeholders})"
+        self.cursor.execute(sql, values)
+        self.conn.commit()
+
+    def get_recent_scans(self, limit: int = 5) -> List[Dict]:
+        self.cursor.execute("SELECT * FROM scan_history ORDER BY id DESC LIMIT ?", (limit,))
+        return [dict(row) for row in self.cursor.fetchall()]
 
     def close(self):
         self.conn.close()

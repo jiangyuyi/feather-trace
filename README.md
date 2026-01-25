@@ -1,7 +1,7 @@
 # FeatherTrace (羽迹) - 智能鸟类摄影管理系统
 
-**Version:** 1.5  
-**Status:** Stable (Advanced VFS, Multi-Source, Async Pipeline)
+**Version:** 1.6  
+**Status:** Stable (Smart Scanning, Auto-Renaming, NAS Support)
 
 FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉（YOLOv8）和多模态大模型技术，自动完成照片的**检测、筛选、识别、元数据注入**以及**层级归档**，并提供一个支持异步批处理的 Web 界面。
 
@@ -9,25 +9,21 @@ FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它�
 
 ## ✨ 核心功能
 
+*   **📂 智能扫描与解析**:
+    *   **Smart Scanning**: 支持按日期范围过滤文件夹，极大提升对大规模图库的处理效率。
+    *   **混合解析**: 父目录采用标准格式 (`yyyyMMdd-yyyyMMdd...`)，子目录支持自定义正则，灵活适应各种整理习惯。
+*   **🧠 多引擎识别与备选**:
+    *   **Top-K Candidates**: 自动保存 AI 的前 5 个识别结果。
+    *   **人工校对辅助**: 在 Web 界面提供“AI 备选”建议列表，一键修正。
+    *   **引擎支持**: BioCLIP (Local v1/v2), 懂鸟 (Dongniao API), HuggingFace API。
+*   **🛠️ 动态归档与重命名**:
+    *   **Smart Renaming**: 当您修正物种名时，系统会自动重命名文件并将其移动到正确的分类文件夹中。
+    *   **EXIF/IPTC**: 自动写入标准化的标题 (`中文名 (拉丁名)`) 和标签。低置信度结果会在备注中列出备选项。
 *   **🌐 虚拟文件系统 (VFS)**: 
-    *   支持任意本地路径，并为 WebDAV/SMB 等远程协议预留了架构。
-    *   **安全限制**: 引入 `allowed_roots` 白名单机制，确保系统仅访问授权目录。
-*   **📂 多源输入与智能解析**:
-    *   支持配置多个源文件夹。
-    *   **自定义解析**: 支持使用正则表达式从复杂的文件夹结构中提取“日期”和“地点”元数据。
-*   **🛠️ 动态输出模版**:
-    *   支持基于元数据的自定义归档结构（例如：`{year}/{location}/{species_cn}/{filename}`）。
-    *   **镜像模式**: 可选择完全保留原始目录结构进行输出。
-*   **🧠 多引擎识别**:
-    *   **BioCLIP (Local)**: 针对显卡优化 (FP16/Caching)，支持 v1/v2 模型切换。
-    *   **懂鸟 (Dongniao API)**: 专为中国鸟类优化。
-*   **✍️ 元数据回写**: 
-    *   自动为处理后的照片写入 IPTC/XMP 标签。
-    *   **源文件回写**: 支持将识别出的鸟种信息写回原始 Raw 文件，方便其他搜索工具索引。
+    *   完美支持挂载的 NAS (WebDAV/SMB) 路径。
 *   **💻 高级 Web UI**:
-    *   **异步批处理**: 在 Web 界面一键启动流水线，通过 WebSocket 实时查看黑色控制台日志。
-    *   **智能搜索**: 针对中国鸟类优化搜索算法，优先展示中文名匹配结果。
-    *   **对比预览**: 按住图片可实时对比“裁切图”与“原图”。
+    *   **异步批处理**: 支持指定日期范围运行流水线。
+    *   **对比预览**: 按住图片实时对比“裁切图”与“原图”。
 
 ---
 
@@ -47,19 +43,16 @@ FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它�
 pip install -r requirements.txt
 ```
 
-### 2. 配置源与输出 (`config/settings.yaml`)
+### 2. 配置 (`config/settings.yaml`)
 
 ```yaml
 paths:
-  allowed_roots: ["D:/Photos", "E:/Birds"] # 允许访问的根目录
+  allowed_roots: ["D:/Photos", "Z:/NAS_Photos"]
   sources:
-    - path: "D:/Photos/2023_Raw"
+    - path: "Z:/NAS_Photos/Raw"
       recursive: true
-      structure_pattern: "(?P<date>\\d{8})_(?P<location>.*)" # 可选正则解析
   output:
-    root_dir: "D:/Photos/Processed"
     structure_template: "{year}/{location}/{species_cn}/{filename}"
-    write_back_to_source: true # 是否回写原图
 ```
 
 ### 3. 启动 Web 界面
@@ -67,7 +60,7 @@ paths:
 ```bash
 python src/web/app.py
 ```
-访问 `http://localhost:8000`，进入 **Admin & Tasks** 页面点击 **Start Pipeline** 即可开始自动化处理。
+访问 `http://localhost:8000`。
 
 ---
 

@@ -9,6 +9,36 @@ class PathParser:
         self.source_root = Path(source_root)
         self.pattern = re.compile(pattern) if pattern else None
         
+    @staticmethod
+    def parse_folder_name(folder: str):
+        """
+        Returns (date_start, date_end, location_part) or (None, None, folder)
+        date_end is only set if range pattern matches.
+        """
+        # Pattern 1: Range yyyyMMdd-yyyyMMdd{location}
+        match_range_full = re.match(r'^(\d{8})-(\d{8})[_\s-]*(.+)$', folder)
+        if match_range_full:
+            return match_range_full.group(1), match_range_full.group(2), match_range_full.group(3)
+            
+        # Pattern 2: Range yyyyMMdd-dd{location}
+        match_range_short = re.match(r'^(\d{8})-(\d{2})[_\s-]*(.+)$', folder)
+        if match_range_short:
+            start = match_range_short.group(1)
+            # Construct end date: same year/month prefix + day
+            end = start[:6] + match_range_short.group(2) 
+            return start, end, match_range_short.group(3)
+            
+        # Pattern 3: Standard Single Date yyyyMMdd_Location
+        match_single = re.match(r'^(\d{8})[_\s-]*(.+)$', folder)
+        if match_single:
+            return match_single.group(1), None, match_single.group(2)
+        
+        # Pattern 4: Date only
+        if folder.isdigit() and len(folder) == 8:
+             return folder, None, None
+
+        return None, None, folder
+
     def parse(self, file_path: str) -> Dict[str, str]:
         """
         Parse metadata from file path.
@@ -18,7 +48,6 @@ class PathParser:
         try:
             rel_path = abs_path.relative_to(self.source_root)
         except ValueError:
-            # Should not happen if fs_manager works correctly
             rel_path = abs_path
             
         result = {
@@ -27,33 +56,6 @@ class PathParser:
             'source_structure': str(rel_path.parent).replace('\\', '/')
         }
         
-        # 1. Regex Match (High Priority)
-        if self.pattern:
-            # Match against the relative path string (normalized to unix style for consistency)
-            path_str = str(rel_path).replace('\\', '/')
-            match = self.pattern.search(path_str)
-            if match:
-                groups = match.groupdict()
-                if 'date' in groups:
-                    result['captured_date'] = groups['date']
-                if 'location' in groups:
-                    loc = groups['location']
-                    # STRICT SAFETY: Location should never contain the filename
-                    # If regex was greedy (e.g. .*), it captures the whole path including filename.
-                    filename = abs_path.name
-                    
-                    if loc.endswith(filename):
-                        loc = loc[:-len(filename)]
-                    
-                    # Clean up trailing separators
-                    loc = loc.rstrip('/\\_ ')
-                    
-                    result['location_tag'] = loc
-                return result
-
-        # 2. Default Guessing Logic (Fallback)
-        # Assumes relative path folders contain location/date info.
-        # We iterate through all folder levels to build the location tag.
         parts = rel_path.parts
         if len(parts) <= 1:
             # File is in root
@@ -63,40 +65,35 @@ class PathParser:
         locations = []
         found_date = None
         
-        for folder in folder_parts:
-            # Check for patterns
+        # Iterate all folders
+        for i, folder in enumerate(folder_parts):
+            is_last_folder = (i == len(folder_parts) - 1)
             
-            # Pattern 1: Range yyyyMMdd-yyyyMMdd{location}
-            # e.g. 20231001-20231007Japan
-            match_range_full = re.match(r'^(\d{8})-(\d{8})[_\s-]*(.+)$', folder)
-            if match_range_full:
-                found_date = match_range_full.group(1)
-                locations.append(match_range_full.group(3))
-                continue
-                
-            # Pattern 2: Range yyyyMMdd-dd{location}
-            # e.g. 20231001-07_USA
-            match_range_short = re.match(r'^(\d{8})-(\d{2})[_\s-]*(.+)$', folder)
-            if match_range_short:
-                found_date = match_range_short.group(1)
-                locations.append(match_range_short.group(3))
-                continue
-                
-            # Pattern 3: Standard Single Date yyyyMMdd_Location
-            # e.g. 20231020_OlympicPark or 20241230东京
-            match_single = re.match(r'^(\d{8})[_\s-]*(.+)$', folder)
-            if match_single:
-                found_date = match_single.group(1)
-                locations.append(match_single.group(2))
-                continue
+            # Logic for Last Folder: Try Regex First if configured
+            matched_regex = False
+            if is_last_folder and self.pattern:
+                match = self.pattern.search(folder) # Search inside the folder name string ONLY
+                if match:
+                    groups = match.groupdict()
+                    if 'date' in groups:
+                        found_date = groups['date']
+                    if 'location' in groups:
+                        # Clean up location from regex
+                        loc = groups['location']
+                        loc = loc.rstrip('/\\_ ')
+                        locations.append(loc)
+                    matched_regex = True
             
-            # Pattern 4: Date only (Folder is just date)
-            if folder.isdigit() and len(folder) == 8:
-                 found_date = folder
-                 continue
-
-            # Fallback: Treat entire folder name as location
-            locations.append(folder)
+            # Standard Logic (Parents OR Last Folder if regex failed)
+            if not matched_regex:
+                d_start, _, loc_part = self.parse_folder_name(folder)
+                
+                if d_start:
+                    found_date = d_start
+                    if loc_part: locations.append(loc_part)
+                else:
+                    # No date found, entire folder is location
+                    locations.append(folder)
             
         if found_date:
             result['captured_date'] = found_date

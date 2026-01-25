@@ -97,7 +97,8 @@
                             <button class="btn btn-sm btn-outline-primary edit-btn" 
                                     data-id="{{ photo.id }}" 
                                     data-sci="{{ photo.scientific_name }}"
-                                    data-cn="{{ photo.primary_bird_cn }}">
+                                    data-cn="{{ photo.primary_bird_cn }}"
+                                    data-candidates='{{ photo.candidates_json | default("[]") }}'>
                                 ✏️ Correct ID
                             </button>
                             <div class="btn-group btn-group-sm">
@@ -127,8 +128,16 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="edit-photo-id">
+                    
+                    <!-- AI Candidates Section -->
+                    <div id="ai-candidates-section" class="mb-3 d-none">
+                        <label class="form-label text-muted small">AI Alternatives (Click to Select)</label>
+                        <div id="ai-candidates-list" class="list-group mb-3"></div>
+                        <hr>
+                    </div>
+
                     <div class="mb-3">
-                        <label class="form-label">Search Species</label>
+                        <label class="form-label">Search Manual Override</label>
                         <input type="text" class="form-control" id="species-search" placeholder="Type name...">
                         <div id="search-results" class="list-group mt-2"></div>
                     </div>
@@ -162,6 +171,36 @@
                 document.getElementById('edit-photo-id').value = currentPhotoId;
                 document.getElementById('species-search').value = '';
                 document.getElementById('search-results').innerHTML = '';
+                
+                // Load Candidates
+                const candidatesData = btn.dataset.candidates;
+                const candidatesList = document.getElementById('ai-candidates-list');
+                const candidatesSection = document.getElementById('ai-candidates-section');
+                
+                candidatesList.innerHTML = '';
+                try {
+                    const cands = JSON.parse(candidatesData);
+                    if (cands && cands.length > 0) {
+                        candidatesSection.classList.remove('d-none');
+                        cands.forEach(c => {
+                            const confPct = (c.score * 100).toFixed(1);
+                            const item = document.createElement('button');
+                            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                            item.innerHTML = `
+                                <span>${c.cn} <small class="text-muted">(${c.sci})</small></span>
+                                <span class="badge bg-secondary rounded-pill">${confPct}%</span>
+                            `;
+                            item.onclick = () => selectSpecies(c.sci, c.cn);
+                            candidatesList.appendChild(item);
+                        });
+                    } else {
+                        candidatesSection.classList.add('d-none');
+                    }
+                } catch(e) {
+                    console.error("Failed to parse candidates", e);
+                    candidatesSection.classList.add('d-none');
+                }
+
                 editModal.show();
             });
         });

@@ -23,22 +23,30 @@ class ExifWriter:
 
         # Prepare arguments for argfile
         # -charset utf8 is passed to CLI, argfile should be UTF-8.
+        # Use -E to allow HTML entities for newlines and special chars
         lines = [
             "-m",
             "-overwrite_original",
             "-charset", "iptc=UTF8",
-            "-codedcharacterset=utf8"
+            "-codedcharacterset=utf8",
+            "-E" 
         ]
         
         for tag, value in tags.items():
             if isinstance(value, list):
                 # For multi-value tags like Keywords
                 for v in value:
-                    if v: # Skip empty values
+                    if v is not None: # Changed from 'if v:' to allow empty strings
                         lines.append(f"-{tag}={v}")
             else:
-                if value:
-                    lines.append(f"-{tag}={value}")
+                if value is not None: # Changed from 'if value:' to allow empty strings
+                    # Sanitize: Replace newlines with HTML entity &#xa;
+                    # ExifTool with -E will decode this back to a newline
+                    safe_value = str(value).replace('\n', '&#xa;')
+                    lines.append(f"-{tag}={safe_value}")
+        
+        # Add the image path to the argfile to avoid CLI encoding issues on Windows
+        lines.append(str(image_path))
         
         # Write to temporary argfile (UTF-8)
         # delete=False is required on Windows to allow closing before subprocess reads it
@@ -54,8 +62,8 @@ class ExifWriter:
             cmd = [
                 self.exiftool_path,
                 "-charset", "utf8", # Interpret argfile and CLI args as UTF-8
-                "-@", arg_file,
-                image_path
+                "-@", arg_file
+                # image_path is now IN the argfile
             ]
             
             # Run ExifTool

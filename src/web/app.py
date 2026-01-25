@@ -7,6 +7,7 @@ import os
 import gc
 import asyncio
 import threading
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, WebSocket
@@ -25,6 +26,7 @@ from src.metadata.exif_writer import ExifWriter # Added import
 from src.utils.config_loader import load_config
 from src.core.io.fs_manager import FileSystemManager
 from src.pipeline_runner import FeatherTracePipeline # Import Pipeline
+from src.core.io.path_generator import PathGenerator # Added import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +58,7 @@ class TaskManager:
         self.logs.append(message)
         if len(self.logs) > 1000: self.logs.pop(0)
         
-    def start_pipeline(self):
+    def start_pipeline(self, start_date=None, end_date=None):
         if self.is_running:
             return False
         
@@ -64,11 +66,11 @@ class TaskManager:
         self.logs = ["Starting pipeline..."]
         
         # Run in thread
-        thread = threading.Thread(target=self._run_pipeline_thread, daemon=True)
+        thread = threading.Thread(target=self._run_pipeline_thread, args=(start_date, end_date), daemon=True)
         thread.start()
         return True
 
-    def _run_pipeline_thread(self):
+    def _run_pipeline_thread(self, start_date, end_date):
         try:
             # Setup custom logger to capture output
             log_capture = logging.getLogger()
@@ -76,7 +78,7 @@ class TaskManager:
             log_capture.addHandler(handler)
             
             runner = FeatherTracePipeline(str(BASE_DIR / "config/settings.yaml"))
-            runner.run()
+            runner.run(start_date=start_date, end_date=end_date)
             
             logging.info("Pipeline execution completed.")
         except Exception as e:
@@ -186,6 +188,10 @@ class UpdateLabelRequest(BaseModel):
     scientific_name: str
     chinese_name: str
 
+class StartPipelineRequest(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
 # --- Routes ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -249,12 +255,25 @@ def admin_dashboard(request: Request):
     }
     return templates.TemplateResponse("admin.html", {"request": request, "stats": stats})
 
+@app.get("/api/scan_history")
+def get_scan_history():
+    manager = IOCManager(str(db_path))
+    try:
+        history = manager.get_recent_scans(limit=10)
+        return history
+    finally:
+        manager.close()
+
 @app.post("/api/pipeline/start")
-def start_pipeline():
+def start_pipeline(req: StartPipelineRequest):
     if task_manager.is_running:
         return {"status": "error", "message": "Pipeline already running"}
     
-    task_manager.start_pipeline()
+    # Normalize empty strings to None
+    s_date = req.start_date if req.start_date else None
+    e_date = req.end_date if req.end_date else None
+    
+    task_manager.start_pipeline(s_date, e_date)
     return {"status": "success", "message": "Pipeline started"}
 
 @app.websocket("/ws/progress")
@@ -355,19 +374,160 @@ def update_label(req: UpdateLabelRequest):
     manager.close()
     
     # 4. Prepare Tags
-    # Description: Just the bird name, no "AI" or score.
-    # Keywords: [Chinese Name, Location, Family, Scientific Name]
+    # Reconstruct UserComment from candidates_json if available
+    user_comment = req.chinese_name
+    
+    # Try to load candidates to preserve history in EXIF
+    try:
+        candidates = []
+        if 'candidates_json' in photo and photo['candidates_json']:
+            candidates = json.loads(photo['candidates_json'])
+        
+        if candidates:
+            # We must adhere to the same logic as pipeline: check threshold from config
+            # But wait, config is loaded at module level.
+            alt_threshold = config.get('recognition', {}).get('alternatives_threshold', 70)
+            
+            # Since this is a manual update, the "Top Match" is now the user selection.
+            # But the candidates list reflects the *AI's* original opinion.
+            # We should probably keep the list as "AI Alternatives" vs "Manual Selection".
+            # Or just rewrite the list with the user selection as "Current"?
+            # User requirement: "all alternatives still preserved".
+            
+            # Let's reconstruct the original AI string, but maybe add a note?
+            # Or simpler: Just regenerate the string exactly as the pipeline did, 
+            # based on the stored AI data. The UserComment is "AI's opinion".
+            # The ImageDescription/Keywords reflect the "Current Truth".
+            
+            # Re-generate comment based on AI data
+            # Note: The 'top' in candidates is the original AI top, not necessarily the current label.
+            # This preserves the history of what AI thought.
+            
+            comment_lines = []
+            
+            # Check if we should show alternatives based on original AI top score
+            top_score = candidates[0].get('score', 0) * 100 if candidates else 0
+            show_alternatives = (top_score <= alt_threshold)
+            
+            display_list = candidates if show_alternatives else [candidates[0]]
+            
+            for i, cand in enumerate(display_list):
+                c_sci = cand.get('sci')
+                c_cn = cand.get('cn')
+                c_conf = cand.get('score', 0) * 100
+                
+                if i == 0:
+                    comment_lines.append(f"AI Top: {c_cn} ({c_sci}) - {c_conf:.1f}%")
+                    if show_alternatives and len(display_list) > 1:
+                        comment_lines.append("Alternatives:")
+                else:
+                    comment_lines.append(f"{i}. {c_cn} ({c_sci}) - {c_conf:.1f}%")
+            
+            # Add a manual override note if it differs
+            if candidates[0].get('sci') != req.scientific_name:
+                comment_lines.insert(0, f"[Manual Correction] Current: {req.chinese_name}")
+            
+            user_comment = "&#xa;".join(comment_lines)
+            
+    except Exception as e:
+        logger.error(f"Failed to reconstruct UserComment: {e}")
+        user_comment = req.chinese_name
+
+    description = f"{req.chinese_name} ({req.scientific_name})"
     tags = {
         "IPTC:Keywords": [req.chinese_name, photo['location_tag'], family_cn, req.scientific_name],
-        "XMP:Description": req.chinese_name
+        "XMP:Description": description,
+        "XPTitle": description,   # Windows Explorer Title
+        "XPSubject": "",          # Explicitly clear Subject per request
+        "ImageDescription": description, # Ensure standard compatibility
+        "UserComment": user_comment
     }
     
-    # 5. Update Metadata for Processed Image
+    # 5. Handle File Renaming (If template uses species name or confidence)
     processed_path = photo.get('file_path')
+    
+    if processed_path and os.path.exists(processed_path):
+        out_conf = config.get('paths', {}).get('output', {})
+        template = out_conf.get('structure_template', "")
+        
+        # Check if template depends on species or confidence
+        if any(x in template for x in ["{species_cn}", "{species_sci}", "{confidence}"]):
+            try:
+                # Resolve Source Structure
+                source_structure = "."
+                if photo.get('original_path'):
+                    orig_path_obj = Path(photo['original_path'])
+                    # Check sources to find relative root
+                    sources = config.get('paths', {}).get('sources', [])
+                    for src in sources:
+                        try:
+                            src_path = Path(src['path']).resolve()
+                            if src_path in orig_path_obj.parents:
+                                rel = orig_path_obj.parent.relative_to(src_path)
+                                source_structure = str(rel).replace('\\', '/')
+                                break
+                        except Exception: continue
+
+                gen_meta = {
+                    'captured_date': photo['captured_date'],
+                    'location_tag': photo['location_tag'],
+                    'primary_bird_cn': req.chinese_name,
+                    'scientific_name': req.scientific_name,
+                    'confidence_score': 1.0, # Manual confirmation = 100% confidence
+                    'source_structure': source_structure 
+                }
+                
+                # Re-instantiate generator
+                generator = PathGenerator(
+                    template=template,
+                    output_root=out_conf.get('root_dir', 'data/processed')
+                )
+                
+                # FIX: Use ORIGINAL filename stem to avoid appending suffixes to already processed names
+                # e.g. "Bird.jpg" -> "Bird_NewName.jpg", NOT "Bird_OldName_NewName.jpg"
+                orig_filename = photo.get('filename') # Default fallback
+                if photo.get('original_path'):
+                    orig_filename = Path(photo['original_path']).name
+                
+                new_path = generator.generate_path(gen_meta, orig_filename)
+                
+                # If path changed, move file and update DB
+                if Path(new_path).resolve() != Path(processed_path).resolve():
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Rename/Move
+                    # Since we are essentially "re-processing" the name, 
+                    # we must ensure we don't overwrite an existing file (unless it's self?)
+                    # PathGenerator does NOT handle collision check inside generate_path, 
+                    # pipeline_runner handled it. We should handle it here too.
+                    
+                    final_path = new_path
+                    if final_path.exists() and final_path.resolve() != Path(processed_path).resolve():
+                         stem = final_path.stem
+                         counter = 1
+                         while final_path.exists():
+                             final_path = final_path.with_name(f"{stem}_{counter}.jpg")
+                             counter += 1
+                    
+                    shutil.move(processed_path, final_path)
+                    
+                    # Update DB
+                    conn = get_db_conn()
+                    conn.execute("UPDATE photos SET file_path = ?, filename = ? WHERE id = ?", 
+                                 (str(final_path), final_path.name, req.photo_id))
+                    conn.commit()
+                    conn.close()
+                    
+                    processed_path = str(final_path) # Update local var for EXIF writing
+                    logger.info(f"Renamed file to: {final_path}")
+            except Exception as e:
+                logger.error(f"Failed to rename file: {e}")
+
+    # 6. Update Metadata for Processed Image
     if processed_path and os.path.exists(processed_path):
         exif_writer.write_metadata(processed_path, tags)
     
-    # 6. Update Metadata for Original Image (if exists)
+    # 7. Update Metadata for Original Image (if exists)
     original_path = photo.get('original_path')
     if original_path and os.path.exists(original_path):
         # We might want to append "FeatherTrace" to keywords if not present, 

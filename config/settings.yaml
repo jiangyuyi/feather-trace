@@ -2,19 +2,21 @@ paths:
   # Security: Only allow access to these root directories (for Web UI and LocalProvider)
   allowed_roots:
     - "D:/Code/gemini/feather_trace/data"
+  #  - "Y:/1按年份/2026"
     
   # Deprecated: raw_dir (use sources below)
   # raw_dir: "data/raw" 
   
   sources:
     - path: "data/raw"
+  #  - path: "Y:/1按年份/2026"
       recursive: true
       enabled: true
       # Optional: Regex pattern to extract metadata from folder structure
       # Named groups supported: (?P<date>...), (?P<location>...)
       # Example: "(?P<date>\\d{8})_(?P<location>.*)" matches "20231020_Park"
       # If omitted, default guessing logic (YYYYMMDD_Location) is used.
-      structure_pattern: "(?P<date>\\d{8})_(?P<location>.*)" 
+      structure_pattern: "(?P<date>\\d{8})(?P<location>.*)" 
 
   # Output Configuration
   output:
@@ -27,7 +29,7 @@ paths:
     # Example 1 (Flat): "{date}_{location}_{species_cn}_{confidence}"
     # Example 2 (Tree): "{year}/{location}/{species_cn}/{filename}"
     # Example 3 (Mirror): "{source_structure}/{filename}"
-    structure_template: "{source_structure}/{filename}"
+    structure_template: "{source_structure}/{filename}_{species_cn}_{confidence}"
     
     # Whether to write identified metadata back to the SOURCE file (Original)
     # WARNING: This modifies your raw data!
@@ -54,6 +56,7 @@ recognition:
   mode: "local" # options: local, api, dongniao
   region_filter: "auto"  # options: null (world), "china", "auto"
   top_k: 5
+  alternatives_threshold: 70 # If top match confidence > this, don't show alternatives
   
   # BioCLIP Local Configuration
   local:
