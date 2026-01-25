@@ -195,7 +195,7 @@ class StartPipelineRequest(BaseModel):
 # --- Routes ---
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, q: str = "", filter: str = ""):
+def index(request: Request, q: str = "", filter: str = "", date: str = "", limit: int = 50, offset: int = 0):
     conn = get_db_conn()
     cursor = conn.cursor()
     
@@ -210,31 +210,55 @@ def index(request: Request, q: str = "", filter: str = ""):
         query_parts.append('(primary_bird_cn = ? OR scientific_name = ?)')
         params.extend(['待确认鸟种', 'Uncertain'])
     
+    if date:
+        query_parts.append('captured_date = ?')
+        params.append(date)
+    
     where_clause = "WHERE " + " AND ".join(query_parts) if query_parts else ""
     
-    sql = f'SELECT * FROM photos {where_clause} ORDER BY captured_date DESC LIMIT 50'
+    # Get total count for pagination
+    count_sql = f'SELECT COUNT(*) FROM photos {where_clause}'
+    cursor.execute(count_sql, params)
+    total_count = cursor.fetchone()[0]
     
-    cursor.execute(sql, params)
-    
+    # Get photos
+    sql = f'SELECT * FROM photos {where_clause} ORDER BY captured_date DESC, id DESC LIMIT ? OFFSET ?'
+    cursor.execute(sql, params + [limit, offset])
     photos = cursor.fetchall()
     
     display_photos = []
     for p in photos:
         p_dict = dict(p)
         p_dict['web_raw_path'] = resolve_web_path(p_dict.get('original_path'))
-        
-        # New logic for nested processed paths
-        # We rely on 'file_path' column which stores absolute path
         p_dict['web_processed_path'] = resolve_processed_web_path(p_dict.get('file_path'))
-        
         display_photos.append(p_dict)
 
+    # Get available dates for filter dropdown
+    cursor.execute("SELECT DISTINCT captured_date FROM photos ORDER BY captured_date DESC")
+    available_dates = [row[0] for row in cursor.fetchall() if row[0]]
+
     conn.close()
+    
+    # Pagination helpers
+    has_next = (offset + limit) < total_count
+    has_prev = offset > 0
+    next_offset = offset + limit
+    prev_offset = max(0, offset - limit)
     
     return templates.TemplateResponse("index.html", {
         "request": request, 
         "photos": display_photos,
-        "query": q
+        "query": q,
+        "current_filter": filter,
+        "current_date": date,
+        "limit": limit,
+        "offset": offset,
+        "total_count": total_count,
+        "available_dates": available_dates,
+        "has_next": has_next,
+        "has_prev": has_prev,
+        "next_offset": next_offset,
+        "prev_offset": prev_offset
     })
 
 @app.get("/admin", response_class=HTMLResponse)

@@ -50,12 +50,32 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
-                    <li class="nav-item"><a class="nav-link active" href="/">Gallery</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/?filter=uncertain">⚠️ Uncertain</a></li>
+                    <li class="nav-item"><a class="nav-link {{ 'active' if not current_filter }}" href="/">Gallery</a></li>
+                    <li class="nav-item"><a class="nav-link {{ 'active' if current_filter == 'uncertain' }}" href="/?filter=uncertain">⚠️ Uncertain</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin">Admin & Tasks</a></li>
                 </ul>
+                
+                <!-- Filters Form -->
+                <form class="d-flex me-2" action="/" method="get">
+                    <input type="hidden" name="filter" value="{{ current_filter }}">
+                    <input type="hidden" name="q" value="{{ query }}">
+                    
+                    <select class="form-select me-2" name="date" onchange="this.form.submit()" style="width: auto;">
+                        <option value="">All Dates</option>
+                        {% for d in available_dates %}
+                        <option value="{{ d }}" {{ 'selected' if current_date == d }}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                    
+                    <select class="form-select me-2" name="limit" onchange="this.form.submit()" style="width: auto;">
+                        <option value="20" {{ 'selected' if limit == 20 }}>20</option>
+                        <option value="50" {{ 'selected' if limit == 50 }}>50</option>
+                        <option value="100" {{ 'selected' if limit == 100 }}>100</option>
+                    </select>
+                </form>
+
                 <form class="d-flex" action="/" method="get">
-                    <input class="form-control me-2" type="search" name="q" placeholder="Search species/location..." value="{{ query }}">
+                    <input class="form-control me-2" type="search" name="q" placeholder="Search..." value="{{ query }}">
                     <button class="btn btn-outline-light" type="submit">Search</button>
                 </form>
             </div>
@@ -63,8 +83,25 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- Status Bar -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="text-muted small">
+                Showing {{ offset + 1 }}-{{ offset + photos|length }} of {{ total_count }} photos
+                {% if current_date %} | Date: {{ current_date }} {% endif %}
+                {% if query %} | Query: "{{ query }}" {% endif %}
+            </span>
+            
+            <!-- Pagination Top -->
+            <div class="btn-group btn-group-sm">
+                <a href="/?limit={{ limit }}&offset={{ prev_offset }}&date={{ current_date }}&q={{ query }}&filter={{ current_filter }}" 
+                   class="btn btn-outline-secondary {{ 'disabled' if not has_prev }}">Previous</a>
+                <a href="/?limit={{ limit }}&offset={{ next_offset }}&date={{ current_date }}&q={{ query }}&filter={{ current_filter }}" 
+                   class="btn btn-outline-secondary {{ 'disabled' if not has_next }}">Next</a>
+            </div>
+        </div>
+
         {% if not photos %}
-            <div class="alert alert-info">No photos found. Try running the pipeline or changing your search.</div>
+            <div class="alert alert-info">No photos found. Try changing filters.</div>
         {% endif %}
 
         <div class="row row-cols-1 row-cols-md-3 row-cols-lg-4 g-4">
@@ -78,7 +115,8 @@
                              class="card-img-top main-img" 
                              data-processed="{{ photo.web_processed_path }}"
                              data-raw="{{ photo.web_raw_path }}"
-                             alt="{{ photo.primary_bird_cn }}">
+                             alt="{{ photo.primary_bird_cn }}"
+                             loading="lazy">
                         <span class="original-badge">Hold to view Original</span>
                     </div>
                     
@@ -124,6 +162,16 @@
                 </div>
             </div>
             {% endfor %}
+        </div>
+        
+        <!-- Pagination Bottom -->
+        <div class="d-flex justify-content-center mt-4 mb-5">
+            <div class="btn-group">
+                <a href="/?limit={{ limit }}&offset={{ prev_offset }}&date={{ current_date }}&q={{ query }}&filter={{ current_filter }}" 
+                   class="btn btn-outline-secondary {{ 'disabled' if not has_prev }}">Previous</a>
+                <a href="/?limit={{ limit }}&offset={{ next_offset }}&date={{ current_date }}&q={{ query }}&filter={{ current_filter }}" 
+                   class="btn btn-outline-secondary {{ 'disabled' if not has_next }}">Next</a>
+            </div>
         </div>
     </div>
 
