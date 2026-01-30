@@ -33,6 +33,14 @@ FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。�
 
 ---
 
+## 📸 Web 界面预览
+
+![WebUI Preview](docs/webui_screenshot_placeholder.png)
+
+*支持物种分类筛选、动态翻页和原图对比功能。*
+
+---
+
 ## 🛠️ 环境要求
 
 * **操作系统**: Windows 10/11, macOS, 或 Linux。
