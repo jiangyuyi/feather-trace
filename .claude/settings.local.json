@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(start:*)",
+      "Bash(cmd:*)",
+      "Bash(dir:*)",
+      "Bash(copy bird_order_mapping.csv datareferencesbird_order_mapping.csv)",
+      "Bash(copy:*)",
+      "Bash(copy bird_genus_mapping.csv datareferencesbird_genus_mapping.csv)",
+      "Bash(del parse_excel_xml.py extract_bird_taxonomy.py find_bird_taxonomy.py decode_bird_data.py debug_row_structure.py search_for_aves.py extract_row_5684.py extract_bird_taxonomy_final.py find_bird_rows.py test_import_mapping.py)",
+      "Bash(del check_genus_mapping.py check_excel_genus.py extract_and_save.py find_bird_taxonomy.py find_bird_rows.py extract_row_5684.py extract_bird_taxonomy_final.py parse_excel_xml.py extract_bird_taxonomy.py test_import_mapping.py update_ioc_with_chinese_taxonomy.py fix_database_genus.py repair_excel.py)",
+      "Bash(echo:*)",
+      "Bash(pkill:*)"
+    ]
+  }
+}

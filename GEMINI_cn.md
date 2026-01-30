@@ -43,7 +43,8 @@
     *   **字段统一**: 确保 Title/Description 格式一致，清空冗余 Subject。
 
 ### D. Web 服务 (`src/web`)
-*   **前端**: Bootstrap 5 + Vanilla JS。支持原图对比。
+*   **前端**: Bootstrap 5 + Vanilla JS。支持原图对比，CSS Grid 布局确保照片等宽显示。
+*   **分类筛选**: 交互式分类树，支持动态翻页和一致的状态栏显示。
 *   **智能编辑**: 修改物种名时触发文件重命名 (Rename/Move) 和 EXIF 回写。
 *   **管理**: 支持按日期范围启动批处理任务。
 

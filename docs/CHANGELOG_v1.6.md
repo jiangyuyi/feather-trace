@@ -45,3 +45,29 @@
 ## 👨‍💻 Developer Notes
 *   **Refactoring**: Extracted folder date parsing logic into `PathParser.parse_folder_name` static method.
 *   **API**: Updated `/api/update_label` to handle file system operations (move/rename) and EXIF write-back.
+
+---
+
+## 🐛 Fixes (Post-v1.6)
+
+### Web UI Improvements
+*   **Pagination Consistency**: Fixed inconsistent behavior between top and bottom pagination buttons. Both now use dynamic JavaScript rendering with proper state synchronization.
+*   **Limit Synchronization**: Fixed `currentLimit` variable to properly sync with server value instead of hardcoded 50.
+*   **Layout Fix**: Replaced `<table>` layout with CSS Grid for photo gallery. Now displays 4 equal-width columns regardless of photo count in the last row.
+*   **Taxonomy Tree Layout**: Adjusted sidebar width to `col-md-3` (25%) for better balance with photo grid.
+
+### Technical Details
+```javascript
+// Before: Hardcoded limit
+let currentLimit = 50;
+
+// After: Sync from server
+let currentLimit = {{ limit }};
+
+// CSS Grid for consistent photo sizing
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+```

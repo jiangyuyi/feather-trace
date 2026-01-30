@@ -72,8 +72,9 @@ feather_trace/
 *   **NAS/Remote Support**: Supports WebDAV/SMB via OS-level mounting.
 
 ### D. Web Interface
-*   **Gallery**: Toggle Raw/Processed view.
-*   **Edit**: 
+*   **Gallery**: Toggle Raw/Processed view, CSS Grid layout for consistent photo sizing.
+*   **Taxonomy Filter**: Interactive tree with dynamic pagination and consistent status bar.
+*   **Edit**:
     *   Manual correction with "AI Alternatives" suggestion list.
     *   **Smart Renaming**: Automatically renames/moves files and updates EXIF when species is changed.
 *   **Admin**: System reset, stats, and batch pipeline triggering with date filters.

@@ -44,3 +44,29 @@
 ## 👨‍💻 开发备注
 *   **重构**: 将文件夹日期解析逻辑提取为 `PathParser.parse_folder_name` 静态方法，便于复用。
 *   **API**: 升级 `/api/update_label` 接口，使其具备文件系统操作（移动/重命名）和 EXIF 回写能力。
+
+---
+
+## 🐛 修复 (v1.6 之后)
+
+### Web 界面改进
+*   **翻页一致性**: 修复了顶部和底部翻页按钮行为不一致的问题。现在两者都使用动态 JavaScript 渲染，状态同步正常。
+*   **Limit 同步**: 修复 `currentLimit` 变量，从服务器同步 limit 值而非硬编码 50。
+*   **布局修复**: 使用 CSS Grid 替换表格布局显示照片画廊，无论最后一行有多少张照片，都能保持4列等宽显示。
+*   **分类树布局**: 调整侧边栏宽度为 `col-md-3` (25%)，与照片网格更平衡。
+
+### 技术细节
+```javascript
+// 修改前：硬编码 limit
+let currentLimit = 50;
+
+// 修改后：从服务器同步 limit
+let currentLimit = {{ limit }};
+
+// CSS Grid 确保照片等宽
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+```

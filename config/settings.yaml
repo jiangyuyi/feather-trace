@@ -3,6 +3,9 @@ paths:
   allowed_roots:
   #  - "D:/Code/gemini/feather_trace/data"
     - "Y:/1按年份/2026"
+
+  # Reference data directory (for taxonomy mappings, etc.)
+  references_path: "data/references"
     
   # Deprecated: raw_dir (use sources below)
   # raw_dir: "data/raw" 
@@ -40,6 +43,7 @@ paths:
   
   db_path: "data/db/feathertrace.db"
   ioc_list_path: "data/references/Multiling IOC 15.1_d.xlsx"
+  cn_taxonomy_path: "data/references/动物界-脊索动物门-2025-10626.xlsx"  # 用于加载属中文名映射
   china_list: "config/dictionaries/china_bird_list.txt"
   foreign_list: "config/dictionaries/foreign_countries.txt"
   model_cache_dir: "data/models"

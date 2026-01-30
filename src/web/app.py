@@ -379,6 +379,133 @@ def search_species(q: str):
     manager.close()
     return res
 
+@app.get("/api/taxonomy/tree")
+def get_taxonomy_tree(include_empty: bool = True, date: str = None):
+    """获取分类树，支持显示/隐藏空层级和日期筛选"""
+    manager = IOCManager(str(db_path))
+    try:
+        tree = manager.get_taxonomy_tree(include_empty=include_empty, date_filter=date)
+        return tree
+    finally:
+        manager.close()
+
+@app.get("/api/taxonomy/stats")
+def get_taxonomy_stats(level: str, date: str = None):
+    """按层级统计物种数量（order/family/genus/species）"""
+    manager = IOCManager(str(db_path))
+    try:
+        stats = manager.get_stats_by_level(level=level, date_filter=date)
+        return stats
+    finally:
+        manager.close()
+
+@app.get("/api/photos/by_taxonomy")
+def get_photos_by_taxonomy(
+    order_cn: Optional[str] = None,
+    order_sci: Optional[str] = None,
+    family_cn: Optional[str] = None,
+    family_sci: Optional[str] = None,
+    genus_cn: Optional[str] = None,
+    genus_sci: Optional[str] = None,
+    scientific_name: Optional[str] = None,
+    date: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """按分类层级筛选照片，支持中文和拉丁名参数"""
+    manager = IOCManager(str(db_path))
+    conn = get_db_conn()
+    cursor = conn.cursor()
+
+    try:
+        # Build WHERE clause - 优先使用中文参数，fallback到拉丁名参数
+        query_parts = ["1=1"]
+        params = []
+
+        # 目 - 优先中文参数
+        if order_cn:
+            query_parts.append("t.order_cn = ?")
+            params.append(order_cn)
+        elif order_sci:
+            query_parts.append("t.order_sci = ?")
+            params.append(order_sci)
+
+        # 科 - 优先中文参数
+        if family_cn:
+            query_parts.append("t.family_cn = ?")
+            params.append(family_cn)
+        elif family_sci:
+            query_parts.append("t.family_sci = ?")
+            params.append(family_sci)
+
+        # 属 - 优先中文参数
+        if genus_cn:
+            query_parts.append("t.genus_cn = ?")
+            params.append(genus_cn)
+        elif genus_sci:
+            query_parts.append("t.genus_sci = ?")
+            params.append(genus_sci)
+
+        if scientific_name:
+            query_parts.append("t.scientific_name = ?")
+            params.append(scientific_name)
+        if date:
+            query_parts.append("p.captured_date = ?")
+            params.append(date)
+
+        where_clause = "WHERE " + " AND ".join(query_parts)
+
+        # Get total count
+        count_sql = f'''
+            SELECT COUNT(DISTINCT p.id)
+            FROM taxonomy t
+            JOIN photos p ON LOWER(t.scientific_name) = LOWER(p.scientific_name)
+            {where_clause}
+        '''
+        cursor.execute(count_sql, params)
+        total_count = cursor.fetchone()[0]
+
+        # Get photos
+        sql = f'''
+            SELECT p.*
+            FROM taxonomy t
+            JOIN photos p ON LOWER(t.scientific_name) = LOWER(p.scientific_name)
+            {where_clause}
+            ORDER BY p.captured_date DESC, p.id DESC
+            LIMIT ? OFFSET ?
+        '''
+        cursor.execute(sql, params + [limit, offset])
+        photos = cursor.fetchall()
+
+        # Convert to dicts and resolve web paths
+        display_photos = []
+        for p in photos:
+            p_dict = dict(p)
+            p_dict['web_raw_path'] = resolve_web_path(p_dict.get('original_path'))
+            p_dict['web_processed_path'] = resolve_processed_web_path(p_dict.get('file_path'))
+            display_photos.append(p_dict)
+
+        return {
+            "photos": display_photos,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }
+
+    finally:
+        manager.close()
+        conn.close()
+
+@app.get("/api/taxonomy/search")
+def search_taxonomy(q: str, limit: int = 20):
+    """搜索分类信息（支持目、科、属、物种）"""
+    manager = IOCManager(str(db_path))
+    try:
+        results = manager.search_taxonomy(query=q, limit=limit)
+        return results
+    finally:
+        manager.close()
+
 @app.post("/api/update_label")
 def update_label(req: UpdateLabelRequest):
     manager = IOCManager(str(db_path))

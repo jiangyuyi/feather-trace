@@ -45,6 +45,12 @@ FeatherTrace is an automated pipeline for bird photography management. It bridge
 *   **Candidates**: User sees Top-5 suggestions from AI.
 *   **Renaming**: If the new name affects the file path (e.g., moving from `/Sparrow/` to `/Eagle/`), the system handles the move automatically.
 
+### 3. Taxonomy Filter Flow
+`User clicks tree node` -> `API (/api/photos/by_taxonomy)` -> `Update Grid & Status Bar`
+
+*   **Dynamic Pagination**: Both top status bar and bottom pagination buttons use the same JavaScript function `renderPaginationBottom` for consistent behavior.
+*   **CSS Grid**: Photo gallery uses CSS Grid for consistent 4-column layout regardless of photo count.
+
 ## Infrastructure
 
 *   **Database**: SQLite (`feathertrace.db`).

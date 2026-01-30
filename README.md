@@ -1,96 +1,199 @@
 # FeatherTrace (羽迹) - 智能鸟类摄影管理系统
 
-**Version:** 1.6  
-**Status:** Stable (Smart Scanning, Auto-Renaming, NAS Support)
+**版本:** 1.0.6
+**状态:** 稳定 (智能扫描, 自动重命名, NAS 支持)
 
-FeatherTrace 是一个为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉（YOLOv8）和多模态大模型技术，自动完成照片的**检测、筛选、识别、元数据注入**以及**层级归档**，并提供一个支持异步批处理的 Web 界面。
+FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
+
+本项目是我个人的第一个从零开始完全使用Vibe Coding的项目，使用了Gemini CLI 、Claude Code with MiniMax2.1/GLM4.7，作为一个观鸟爱好者，图片库的识别和整理一直是我的一大痛点，这个项目也算是圆了几年前的一个小梦想。
+
+[查看更新日志](docs/CHANGELOG_v1.6_zh.md) | [架构文档](docs/ARCHITECTURE.md)
 
 ---
 
 ## ✨ 核心功能
 
-*   **📂 智能扫描与解析**:
-    *   **Smart Scanning**: 支持按日期范围过滤文件夹，极大提升对大规模图库的处理效率。
-    *   **混合解析**: 父目录采用标准格式 (`yyyyMMdd-yyyyMMdd...`)，子目录支持自定义正则，灵活适应各种整理习惯。
-*   **🧠 多引擎识别与备选**:
-    *   **Top-K Candidates**: 自动保存 AI 的前 5 个识别结果。
-    *   **人工校对辅助**: 在 Web 界面提供“AI 备选”建议列表，一键修正。
-    *   **引擎支持**: BioCLIP (Local v1/v2), 懂鸟 (Dongniao API), HuggingFace API。
-*   **🛠️ 动态归档与重命名**:
-    *   **Smart Renaming**: 当您修正物种名时，系统会自动重命名文件并将其移动到正确的分类文件夹中。
-    *   **EXIF/IPTC**: 自动写入标准化的标题 (`中文名 (拉丁名)`) 和标签。低置信度结果会在备注中列出备选项。
-*   **🌐 虚拟文件系统 (VFS)**: 
-    *   完美支持挂载的 NAS (WebDAV/SMB) 路径。
-*   **💻 高级 Web UI**:
-    *   **异步批处理**: 支持指定日期范围运行流水线。
-    *   **对比预览**: 按住图片实时对比“裁切图”与“原图”。
+* **📂 智能导入与解析**:
+  * **智能扫描**: 递归扫描文件夹，支持按日期范围过滤，极大提升处理效率。
+  * **混合解析**: 支持标准的父目录格式 (`yyyyMMdd-...`) 和基于正则的子目录解析。
+* **🧠 多引擎识别**:
+  * **引擎支持**: BioCLIP (本地 v1/v2), 懂鸟 (国内优化 API), HuggingFace API。
+  * **Top-K 候选**: 自动保存 AI 的前 5 个预测结果供人工复核。
+  * **智能建议**: Web 界面提供“AI 备选”下拉菜单，一键修正物种。
+* **🛠️ 动态归档**:
+  * **自动整理**: 当您修正物种名时，系统会自动重命名文件并将其移动到正确的分类文件夹中。
+  * **元数据**: 自动写入标准化的 EXIF/IPTC 数据（标题、关键词）。
+* **🌐 网络存储支持**:
+  * 通过操作系统挂载，完美支持 NAS (WebDAV/SMB) 路径。
+* **💻 高级 Web 界面**:
+  * **批处理**: 异步触发指定日期范围的处理任务。
+  * **对比预览**: 实时切换"裁切细节图"与"原始环境图"。
+  * **分类树筛选**: 交互式物种分类导航，动态翻页保持一致体验。
+  * **等宽网格**: CSS Grid 布局确保照片始终等宽显示，无论每行数量多少。
 
 ---
 
-## 🛠️ 环境依赖
+## 🛠️ 环境要求
 
-*   **Python 3.10+**
-*   **ExifTool**: 必须安装并添加到系统 PATH（系统会自动进行环境检查）。
-*   **GPU**: 推荐 NVIDIA RTX 系列（支持 FP16 加速）。
+* **操作系统**: Windows 10/11, macOS, 或 Linux。
+* **Python**: 3.10 或更高版本。
+* **GPU (可选)**: 推荐使用 NVIDIA RTX 系列显卡以加速本地 BioCLIP 推理（需要 CUDA 12.1+）。
 
 ---
 
-## 🚀 快速开始
+## 🚀 部署指南
 
 ### 1. 安装依赖
 
+#### 步骤 A: 安装 ExifTool (必须)
+
+ExifTool 用于写入照片元数据，必须单独安装。
+
+**Windows:**
+
 ```bash
+# 方法1: 使用 Chocolatey (推荐)
+chocolatey install exiftool
+
+# 方法2: 手动安装
+# 1. 下载: https://exiftool.org/install.html#Win32
+# 2. 解压后将 exiftool(-a).exe 重命名为 exiftool.exe
+# 3. 放入系统 PATH (如 C:\Windows\) 或自定义目录
+```
+
+**macOS:**
+
+```bash
+# 使用 Homebrew
+brew install exiftool
+```
+
+**Linux:**
+
+```bash
+# Debian/Ubuntu
+sudo apt install libimage-exiftool-perl
+
+# 或从源码编译
+```
+
+> **重要**: 确保在终端运行 `exiftool -ver` 能正常显示版本号。
+
+#### 步骤 B: 克隆代码并安装 Python 依赖
+
+```bash
+# 1. 克隆代码
+git clone https://github.com/your-repo/feather_trace.git
+cd feather_trace
+
+# 2. 创建虚拟环境 (推荐)
+python -m venv venv
+# Windows:
+.\venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
+# 3. 安装 Python 依赖
 pip install -r requirements.txt
 ```
 
-### 2. 配置 (`config/settings.yaml`)
+#### 步骤 C: 预下载 BioCLIP 模型 (可选，推荐)
 
-```yaml
-paths:
-  allowed_roots: ["D:/Photos", "Z:/NAS_Photos"]
-  sources:
-    - path: "Z:/NAS_Photos/Raw"
-      recursive: true
-  output:
-    structure_template: "{year}/{location}/{species_cn}/{filename}"
+首次使用本地识别时，系统会自动下载 BioCLIP 模型（约 300MB）。如需预下载：
+
+```bash
+# 使用模型下载脚本
+python scripts/download_model.py
+
+# 或手动下载
+# BioCLIP v2 (推荐): hf.co/imageomics/bioclip-v2
+# BioCLIP v1: hf.co/imageomics/bioclip
 ```
 
-### 3. 启动 Web 界面
+> 模型默认缓存至 `~/.cache/huggingface/hub/`。
+
+---
+
+### 2. 配置
+
+FeatherTrace 使用 YAML 进行配置。
+
+1. **主设置**: 编辑 `config/settings.yaml` 来定义您的照片源路径和输出结构。
+2. **密钥**: 如果使用云端 API (懂鸟或 HuggingFace)，请复制示例密钥文件：
+
+   ```bash
+   # Windows 复制命令
+   copy config\secrets.example.yaml config\secrets.yaml
+   ```
+
+   然后编辑 `config/secrets.yaml` 填入您的 API Key。
+
+👉 **[阅读完整配置指南](docs/CONFIGURATION.md)** 了解所有可用选项。
+
+---
+
+### 3. NAS / 远程存储
+
+要处理存储在 NAS (群晖, 威联通等) 上的照片，您必须先将网络共享挂载为本地驱动器。
+
+👉 **[阅读 NAS 设置指南](docs/NAS_SETUP_zh.md)**。
+
+---
+
+### 4. 启动系统
+
+#### A. 启动 Web 界面 (推荐)
+
+这将启动本地 Web 服务器，用于浏览、编辑和触发批处理任务。
 
 ```bash
 python src/web/app.py
 ```
-访问 `http://localhost:8000`。
+
+* 访问地址: `http://localhost:8000`
+* **提示**: 进入 "Admin (管理)" 页面来触发您的第一次扫描。
+
+**首次启动检查清单:**
+
+- [ ] `exiftool` 命令可正常执行
+- [ ] `config/settings.yaml` 中的路径已正确配置
+- [ ] `allowed_roots` 包含所有需要访问的盘符
+- [ ] 照片源目录中有符合命名格式的文件夹 (`YYYYMMDD_地点`)
+
+#### B. 命令行接口 (高级)
+
+您也可以不通过 Web 界面直接运行流水线。
+
+```bash
+# 运行流水线，处理指定日期范围的照片
+python src/pipeline_runner.py --start 20240101 --end 20240131
+```
 
 ---
 
-## 🤝 鸣谢与致谢 (Acknowledgements)
+### 5. 常见问题
 
-本项目的数据支持与核心算法离不开以下开源项目和数据服务的贡献：
+**Q: 启动报错 "exiftool not found"**
+A: 确保 ExifTool 已安装并添加到系统 PATH。重启终端后再试。
 
-### 📚 数据与标准 (Data & Standards)
-*   **IOC World Bird List**: [https://www.worldbirdnames.org/new/](https://www.worldbirdnames.org/new/)  
-    提供全球鸟类分类与命名标准。
-*   **Catalogue of Life China (中国生物物种名录)**: [http://www.sp2000.org.cn/](http://www.sp2000.org.cn/)  
-    提供中国鸟类中文名录与分类参考。
+**Q: 本地 BioCLIP 识别首次运行很慢**
+A: 首次运行时需要下载模型（约 300MB），后续会缓存使用。
 
-### 🧠 模型与算法 (Models & Algorithms)
-*   **BioCLIP Model**: [https://imageomics.github.io/bioclip/](https://imageomics.github.io/bioclip/)  
-    基于大规模生物图像训练的视觉模型，本项目核心识别引擎。
-*   **懂鸟 API (Dongniao)**: [https://ai.open.hhodata.com/#introduce](https://ai.open.hhodata.com/#introduce)  
-    提供高精度的中国本土鸟类识别服务。
+**Q: CUDA out of memory**
+A: 在 `settings.yaml` 中将 `device` 改为 `cpu`，或减小 `local.inference_batch_size`。
 
-### 🏗️ 核心开源依赖 (Core Open Source Projects)
-本项目构建于以下优秀的开源项目之上：
-*   **FastAPI**: 高性能 Web API 框架。
-*   **Ultralytics YOLOv8**: 最先进的实时物体检测模型。
-*   **PyTorch**: 深度学习基础框架。
-*   **HuggingFace Transformers**: 模型加载与推理库。
-*   **ExifTool (by Phil Harvey)**: 业界标准的元数据读写工具。
-*   **Pillow (PIL)**: Python 图像处理库。
-*   **Bootstrap**: 响应式前端界面框架。
+**Q: Windows 中文路径乱码**
+A: 确保系统区域设置支持 UTF-8，或使用英文路径。
 
 ---
 
-**License**: MIT  
-**Author**: 鱼酱 with Gemini Assistant
+## 🤝 致谢
+
+* **IOC World Bird List**: [https://www.worldbirdnames.org/](https://www.worldbirdnames.org/) (分类学标准)
+* **BioCLIP**: [https://imageomics.github.io/bioclip/](https://imageomics.github.io/bioclip/) (视觉模型)
+* **懂鸟**: [https://ai.open.hhodata.com/](https://ai.open.hhodata.com/) (中国鸟类识别 API)
+
+---
+
+**许可证**: MIT
+**作者**: 鱼酱 (with Gemini Assistant)
