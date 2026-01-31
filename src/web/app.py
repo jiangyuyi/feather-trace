@@ -130,13 +130,13 @@ if not processed_dir.exists():
     logger.error(f"Processed directory does not exist: {processed_dir}")
     processed_dir.mkdir(parents=True, exist_ok=True)
 
-# Mount static files
-app.mount("/static/processed", StaticFiles(directory=str(processed_dir)), name="processed")
+# Note: Using custom route for /static/processed (see serve_processed_file above)
+# because StaticFiles has issues with Unicode paths on Windows
 
-# Mount allowed roots for "Original View"
+# Mount allowed roots for "Original View" - use follow_symlink=True for Unicode path support
 for idx, root in enumerate(allowed_roots):
     if root.exists():
-        app.mount(f"/static/roots/{idx}", StaticFiles(directory=str(root)), name=f"root_{idx}")
+        app.mount(f"/static/roots/{idx}", StaticFiles(directory=str(root), follow_symlink=True), name=f"root_{idx}")
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "src" / "web" / "templates"))
 
@@ -161,7 +161,9 @@ def resolve_web_path(original_path_str: str) -> Optional[str]:
     """Resolves raw file path to /static/roots/... URL"""
     if not original_path_str: return None
     try:
-        abs_path = Path(original_path_str).resolve()
+        # Normalize path separators to avoid escape sequence issues
+        normalized = original_path_str.replace('\\', '/')
+        abs_path = Path(normalized).resolve()
         for idx, root in enumerate(allowed_roots):
             try:
                 rel_path = abs_path.relative_to(root)
@@ -170,11 +172,22 @@ def resolve_web_path(original_path_str: str) -> Optional[str]:
     except Exception: pass
     return None
 
+@app.get("/static/processed/{path:path}")
+def serve_processed_file(path: str):
+    """Custom static file handler for processed images (Unicode-safe on Windows)"""
+    # Reconstruct the full path - use os.sep for cross-platform path construction
+    full_path = processed_dir / path.replace('/', os.sep)
+    if full_path.exists() and full_path.is_file():
+        return FileResponse(full_path)
+    raise HTTPException(status_code=404, detail="File not found")
+
 def resolve_processed_web_path(file_path_str: str) -> Optional[str]:
     """Resolves processed file path to /static/processed/... URL"""
     if not file_path_str: return None
     try:
-        abs_path = Path(file_path_str).resolve()
+        # Normalize path separators to avoid escape sequence issues
+        normalized = file_path_str.replace('\\', '/')
+        abs_path = Path(normalized).resolve()
         # Check if it's inside processed_dir
         if processed_dir in abs_path.parents:
             rel = abs_path.relative_to(processed_dir)

@@ -76,6 +76,16 @@ class IOCManager:
             try: self.conn.execute("ALTER TABLE photos ADD COLUMN candidates_json TEXT")
             except: pass
 
+        # Migration - Add web path columns
+        try:
+            self.conn.execute("SELECT web_processed_path, web_raw_path FROM photos LIMIT 1")
+        except sqlite3.OperationalError:
+            logging.info("Migrating database: Adding web path columns to photos...")
+            try: self.conn.execute("ALTER TABLE photos ADD COLUMN web_processed_path TEXT")
+            except: pass
+            try: self.conn.execute("ALTER TABLE photos ADD COLUMN web_raw_path TEXT")
+            except: pass
+
         # Migration - Taxonomy table (add genus, family_sci, order_sci, english_name)
         try:
             self.conn.execute("SELECT genus_cn, genus_sci, family_sci, order_sci, english_name FROM taxonomy LIMIT 1")

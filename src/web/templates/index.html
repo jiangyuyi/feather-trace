@@ -284,14 +284,16 @@
                 <div id="photo-gallery-container" class="photo-grid">
                     {% for photo in photos %}
                     {% set is_uncertain = (photo.primary_bird_cn == '待确认鸟种' or photo.scientific_name == 'Uncertain') %}
+                    {% set processed_path = photo.web_processed_path if photo.web_processed_path else '' %}
+                    {% set raw_path = photo.web_raw_path if photo.web_raw_path else '' %}
                     <div class="photo-card">
                         <div class="card h-100 shadow-sm {{ 'status-uncertain' if is_uncertain else '' }}">
                             <div class="position-relative">
                                 <!-- Image: Toggle between processed and raw -->
-                                <img src="{{ photo.web_processed_path }}"
+                                <img src="{{ processed_path }}"
                                      class="card-img-top main-img"
-                                     data-processed="{{ photo.web_processed_path }}"
-                                     data-raw="{{ photo.web_raw_path }}"
+                                     data-processed="{{ processed_path }}"
+                                     data-raw="{{ raw_path }}"
                                      alt="{{ photo.primary_bird_cn }}"
                                      loading="lazy">
                                 <span class="original-badge">Hold to view Original</span>
@@ -326,9 +328,11 @@
                                         ✏️ Correct ID
                                     </button>
                                     <div class="btn-group btn-group-sm">
-                                        <a href="{{ photo.web_processed_path }}" download class="btn btn-outline-secondary">Download Crop</a>
-                                        {% if photo.web_raw_path %}
-                                        <a href="{{ photo.web_raw_path }}" download class="btn btn-outline-secondary">Original</a>
+                                        {% if processed_path %}
+                                        <a href="{{ processed_path }}" download class="btn btn-outline-secondary">Download Crop</a>
+                                        {% endif %}
+                                        {% if raw_path %}
+                                        <a href="{{ raw_path }}" download class="btn btn-outline-secondary">Original</a>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -735,15 +739,18 @@
             for (let i = 0; i < photos.length; i++) {
                 const photo = photos[i];
                 const isUncertain = photo.primary_bird_cn === '待确认鸟种' || photo.scientific_name === 'Uncertain';
+                // 防止 null 值生成 /null 路径
+                const processedPath = photo.web_processed_path || '';
+                const rawPath = photo.web_raw_path || '';
 
                 html += `
                 <div class="photo-card">
                     <div class="card h-100 shadow-sm ${isUncertain ? 'status-uncertain' : ''}">
                         <div class="position-relative">
-                            <img src="${photo.web_processed_path}"
+                            <img src="${processedPath}"
                                  class="card-img-top main-img"
-                                 data-processed="${photo.web_processed_path}"
-                                 data-raw="${photo.web_raw_path}"
+                                 data-processed="${processedPath}"
+                                 data-raw="${rawPath}"
                                  alt="${photo.primary_bird_cn}"
                                  loading="lazy">
                             <span class="original-badge">Hold to view Original</span>
@@ -776,8 +783,8 @@
                                     ✏️ Correct ID
                                 </button>
                                 <div class="btn-group btn-group-sm">
-                                    <a href="${photo.web_processed_path}" download class="btn btn-outline-secondary">Download Crop</a>
-                                    ${photo.web_raw_path ? `<a href="${photo.web_raw_path}" download class="btn btn-outline-secondary">Original</a>` : ''}
+                                    ${processedPath ? `<a href="${processedPath}" download class="btn btn-outline-secondary">Download Crop</a>` : ''}
+                                    ${rawPath ? `<a href="${rawPath}" download class="btn btn-outline-secondary">Original</a>` : ''}
                                 </div>
                             </div>
                         </div>

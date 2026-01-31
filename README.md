@@ -1,7 +1,7 @@
 # FeatherTrace (羽迹) - 智能鸟类摄影管理系统
 
-**版本:** 1.0.6
-**状态:** 稳定 (智能扫描, 自动重命名, NAS 支持)
+**版本:** 1.0.7
+**状态:** 稳定 (修复 Web 界面 Unicode 路径问题)
 
 FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
 
@@ -50,6 +50,79 @@ FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。�
 ---
 
 ## 🚀 部署指南
+
+### ⚡ 一键部署脚本 (推荐)
+
+我们提供了自动化部署脚本，支持 Windows/macOS/Linux，自动完成环境检测、依赖安装、配置向导等步骤。
+
+#### 使用方法
+
+```bash
+# Linux / macOS / Windows (Git Bash)
+bash scripts/deploy.sh deploy
+```
+
+#### 部署流程
+
+脚本会自动执行以下步骤：
+
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| 1 | 环境检测 | 检测 Python、Git、ExifTool、GPU |
+| 2 | 自动安装 | 缺失的软件通过包管理器自动安装 |
+| 3 | 切换镜像 | pip 和 HuggingFace 切换到国内源 |
+| 4 | 克隆项目 | 从 Gitee 镜像克隆 (国内用户友好) |
+| 5 | 安装依赖 | 创建虚拟环境并安装 Python 包 |
+| 6 | 配置向导 | 交互式设置照片源目录、输出目录等 |
+| 7 | 生成配置 | 自动生成 `settings.yaml` 和 `secrets.yaml` |
+
+#### 交互式界面
+
+启动 TUI 交互界面：
+
+```bash
+# Linux / macOS / Windows (Git Bash)
+bash scripts/deploy.sh tui
+```
+
+界面预览：
+
+```
+┌────────────────────────────────────────┐
+│     🪶 羽迹 FeatherTrace 一键部署       │
+├────────────────────────────────────────┤
+│  [1] 🚀 开始部署                        │
+│  [2] ⚙️  配置选项                       │
+│  [3] 📦 更新项目                        │
+│  [4] ⬇️  下载模型                       │
+│  [5] ▶️  启动服务                       │
+│  [6] 📖 查看帮助                       │
+│  [7] ❌  退出                           │
+└────────────────────────────────────────┘
+```
+
+#### 可用命令
+
+| 命令 | 说明 |
+|------|------|
+| `bash scripts/deploy.sh deploy` | 完整部署流程 |
+| `bash scripts/deploy.sh install` | 仅安装依赖 |
+| `bash scripts/deploy.sh config` | 运行配置向导 |
+| `bash scripts/deploy.sh update` | 更新项目 |
+| `bash scripts/deploy.sh model` | 下载 BioCLIP 模型 |
+| `bash scripts/deploy.sh web` | 启动 Web 服务 |
+| `bash scripts/deploy.sh tui` | 启动交互式界面 |
+
+#### GitHub 国内访问
+
+脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/feather-trace），确保国内用户可以快速下载。如需切换到 GitHub 原始仓库，可使用：
+
+```bash
+bash scripts/deploy.sh config
+# 选择配置代理或手动设置
+```
+
+---
 
 ### 1. 安装依赖
 

@@ -1,6 +1,17 @@
-# 更新日志 v1.6
+# 更新日志 v1.6+
 
-## 🚀 新增功能
+## v1.0.7 (2026-02-01)
+
+### 修复
+*   **图片展示**: 修复 Windows 中文路径图片无法显示问题
+*   **Unicode 支持**: 自定义静态文件路由确保非 ASCII 路径正常访问
+*   **数据库**: 添加 web_processed_path/web_raw_path 列自动迁移
+
+---
+
+## v1.6 (2025-xx-xx)
+
+### 🚀 新增功能
 
 ### 1. 智能递归扫描与剪枝 (Smart Scanning)
 *   **功能**: 实现了递归目录扫描器。
@@ -69,4 +80,30 @@ let currentLimit = {{ limit }};
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
 }
+```
+
+### 图片展示修复
+*   **Unicode 路径支持**: 修复了 Windows 上 Web 界面无法显示包含中文等非 ASCII 字符路径图片的问题。
+*   **路径规范化**: 在 `resolve_web_path` 和 `resolve_processed_web_path` 函数中添加路径分隔符规范化处理，将反斜杠统一转换为正斜杠。
+*   **自定义静态文件服务**: 为 `/static/processed/` 路由添加自定义处理器，解决 FastAPI StaticFiles 对 Unicode 路径支持不佳的问题。
+*   **数据库迁移**: 添加 `web_processed_path` 和 `web_raw_path` 列的自动迁移支持。
+
+### 技术细节
+```python
+# 修改前：直接使用 Path 可能导致转义问题
+abs_path = Path(file_path_str).resolve()
+
+# 修改后：先规范化路径分隔符
+normalized = file_path_str.replace('\\', '/')
+abs_path = Path(normalized).resolve()
+```
+
+```python
+# 自定义路由处理 Unicode 路径
+@app.get("/static/processed/{path:path}")
+def serve_processed_file(path: str):
+    full_path = processed_dir / path.replace('/', os.sep)
+    if full_path.exists() and full_path.is_file():
+        return FileResponse(full_path)
+    raise HTTPException(status_code=404, detail="File not found")
 ```
