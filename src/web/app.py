@@ -185,15 +185,32 @@ def resolve_processed_web_path(file_path_str: str) -> Optional[str]:
     """Resolves processed file path to /static/processed/... URL"""
     if not file_path_str: return None
     try:
-        # Normalize path separators to avoid escape sequence issues
+        # Normalize path separators
         normalized = file_path_str.replace('\\', '/')
-        abs_path = Path(normalized).resolve()
+
+        # Handle relative paths - prepend BASE_DIR if not absolute
+        if not Path(normalized).is_absolute():
+            abs_path = (BASE_DIR / normalized).absolute()
+        else:
+            abs_path = Path(normalized).absolute()
+
+        # Normalize processed_dir for comparison
+        processed_abs = processed_dir.absolute()
+
         # Check if it's inside processed_dir
-        if processed_dir in abs_path.parents:
-            rel = abs_path.relative_to(processed_dir)
+        try:
+            rel = abs_path.relative_to(processed_abs)
             return f"/static/processed/{str(rel).replace(os.sep, '/')}"
-    except Exception: pass
-    return None
+        except ValueError:
+            # Try matching via parents
+            for parent in abs_path.parents:
+                if parent == processed_abs:
+                    rel = abs_path.relative_to(processed_abs)
+                    return f"/static/processed/{str(rel).replace(os.sep, '/')}"
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to resolve processed path '{file_path_str}': {e}")
+        return None
 
 # --- API Models ---
 class UpdateLabelRequest(BaseModel):

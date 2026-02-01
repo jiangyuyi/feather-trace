@@ -55,12 +55,57 @@ FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。�
 
 我们提供了自动化部署脚本，支持 Windows/macOS/Linux，自动完成环境检测、依赖安装、配置向导等步骤。
 
-#### 使用方法
+#### Windows 用户
+
+**方法 1: 右键运行 (推荐)**
+1. 进入 `scripts` 文件夹
+2. 右键点击 `deploy.ps1`
+3. 选择 "以 PowerShell 运行"
+
+**方法 2: PowerShell 终端运行**
+```powershell
+# 进入项目目录
+cd feather_trace
+
+# 设置执行策略（首次运行需要）
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+
+# 运行部署脚本
+.\scripts\deploy.ps1
+```
+
+> **说明**: Windows 默认禁止运行 PowerShell 脚本，需要设置执行策略。右键运行可绕过此限制。
+
+#### Linux / macOS / WSL 用户
 
 ```bash
-# Linux / macOS / Windows (Git Bash)
+# 进入项目目录
+cd feather_trace
+
+# 运行部署脚本 (完整部署)
 bash scripts/deploy.sh deploy
+
+# 或仅安装依赖
+bash scripts/deploy.sh install
+
+# 或仅配置
+bash scripts/deploy.sh config
+
+# 或启动 Web 服务
+bash scripts/deploy.sh web
 ```
+
+#### 可用命令
+
+| 命令 | 说明 |
+|------|------|
+| `deploy` | 完整部署流程 (推荐) |
+| `install` | 仅安装依赖 |
+| `config` | 运行配置向导 |
+| `update` | 更新项目 |
+| `cuda` | 安装 CUDA (GPU 支持) |
+| `web` | 启动 Web 服务 |
+| `help` | 显示帮助 |
 
 #### 部署流程
 
@@ -76,16 +121,7 @@ bash scripts/deploy.sh deploy
 | 6 | 配置向导 | 交互式设置照片源目录、输出目录等 |
 | 7 | 生成配置 | 自动生成 `settings.yaml` 和 `secrets.yaml` |
 
-#### 交互式界面
-
-启动 TUI 交互界面：
-
-```bash
-# Linux / macOS / Windows (Git Bash)
-bash scripts/deploy.sh tui
-```
-
-界面预览：
+#### 交互式界面预览
 
 ```
 ┌────────────────────────────────────────┐
@@ -101,26 +137,9 @@ bash scripts/deploy.sh tui
 └────────────────────────────────────────┘
 ```
 
-#### 可用命令
-
-| 命令 | 说明 |
-|------|------|
-| `bash scripts/deploy.sh deploy` | 完整部署流程 |
-| `bash scripts/deploy.sh install` | 仅安装依赖 |
-| `bash scripts/deploy.sh config` | 运行配置向导 |
-| `bash scripts/deploy.sh update` | 更新项目 |
-| `bash scripts/deploy.sh model` | 下载 BioCLIP 模型 |
-| `bash scripts/deploy.sh web` | 启动 Web 服务 |
-| `bash scripts/deploy.sh tui` | 启动交互式界面 |
-
 #### GitHub 国内访问
 
-脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/feather-trace），确保国内用户可以快速下载。如需切换到 GitHub 原始仓库，可使用：
-
-```bash
-bash scripts/deploy.sh config
-# 选择配置代理或手动设置
-```
+脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/feather-trace），确保国内用户可以快速下载。
 
 ---
 

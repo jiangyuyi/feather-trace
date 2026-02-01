@@ -5,6 +5,17 @@
 
 $ProgressPreference = "SilentlyContinue"
 
+# 检查并设置执行策略（允许运行脚本）
+try {
+    $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
+    if ($currentPolicy -eq "Restricted") {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Log-Info "Execution policy set to RemoteSigned"
+    }
+} catch {
+    # 如果设置失败，脚本仍可通过右键运行方式执行
+}
+
 $PROJECT_ROOT = Split-Path -Parent $PSScriptRoot
 $GITEE_MIRROR = "https://gitee.com/jiangyuyi/feather-trace.git"
 $GITHUB_ORIGIN = "https://github.com/jiangyuyi/feather-trace.git"
@@ -122,6 +133,209 @@ function Test-GPU {
     return $false
 }
 
+function Test-CUDA {
+    <#
+    .SYNOPSIS
+        检测 CUDA 和 cuDNN 是否已安装
+    .OUTPUTS
+        返回 hashtable，包含 cuda_version, cudnn_version, is_available
+    #>
+    $result = @{
+        cuda_version = $null
+        cudnn_version = $null
+        is_available = $false
+        driver_version = $null
+    }
+
+    # 检测 NVIDIA 驱动
+    if (Test-Command "nvidia-smi") {
+        try {
+            $driverVersion = nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>&1 | Select-Object -First 1
+            $result.driver_version = $driverVersion.Trim()
+            Log-Info "NVIDIA Driver: $driverVersion"
+        } catch { }
+    }
+
+    # 检测 CUDA (nvcc)
+    if (Test-Command "nvcc") {
+        try {
+            $cudaVersion = nvcc --version 2>&1 | Select-String "release" | ForEach-Object {
+                $_ -replace ".*release (\d+\.\d+).*", '$1'
+            }
+            if ($cudaVersion) {
+                $result.cuda_version = $cudaVersion.Trim()
+                $result.is_available = $true
+                Log-Info "CUDA Toolkit: $cudaVersion"
+            }
+        } catch { }
+    } else {
+        Log-Warn "CUDA Toolkit (nvcc) not found"
+    }
+
+    # 检测 cuDNN
+    $cudnnPaths = @(
+        "$env:ProgramFiles\NVIDIA GPU Computing Toolkit\CUDA\*\lib\x64\cudnn*",
+        "$env:ProgramFiles\NVIDIA Corporation\cudnn\*\bin\cudnn*",
+        "$env:CUDA_PATH\lib\x64\cudnn*",
+        "$env:LOCALAPPDATA\NVIDIA\cudnn\*"
+    )
+
+    foreach ($path in $cudnnPaths) {
+        $cudnn = Get-ChildItem -Path $path -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cudnn) {
+            $result.cudnn_version = "Installed"
+            $result.is_available = $true
+            Log-Info "cuDNN found: $($cudnn.FullName)"
+            break
+        }
+    }
+
+    if (-not $result.cudnn_version) {
+        Log-Warn "cuDNN not found"
+    }
+
+    return $result
+}
+
+function Install-CUDA {
+    <#
+    .SYNOPSIS
+        提供 CUDA 安装指引
+    #>
+    param([string]$Device)
+
+    if ($Device -ne "cuda" -and $Device -ne "auto") {
+        return $true
+    }
+
+    Log-Step "Checking CUDA environment for $Device mode..."
+
+    $cudaStatus = Test-CUDA
+
+    if ($cudaStatus.is_available) {
+        Log-Success "CUDA environment ready (Driver: $($cudaStatus.driver_version), CUDA: $($cudaStatus.cuda_version))"
+        return $true
+    }
+
+    # CUDA 不可用，提供安装指引
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "  CUDA Installation Required" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  GPU detected but CUDA/cuDNN not installed." -ForegroundColor White
+    Write-Host "  FeatherTrace requires CUDA for GPU acceleration." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Option 1: Auto-download (requires admin)" -ForegroundColor Cyan
+    Write-Host "  Option 2: Manual download links" -ForegroundColor Cyan
+    Write-Host "  Option 3: Continue with CPU (slower)" -ForegroundColor Yellow
+    Write-Host ""
+
+    $choice = Read-Host "Select option (1-3)"
+
+    switch ($choice) {
+        "1" {
+            # 尝试自动下载
+            Install-CUDAAuto
+        }
+        "2" {
+            Show-CudaDownloadLinks
+        }
+        "3" {
+            Log-Warn "Continuing with CPU mode"
+            return $false  # 返回 false 让调用方切换到 CPU
+        }
+        default {
+            Log-Error "Invalid choice"
+            return $false
+        }
+    }
+}
+
+function Install-CUDAAuto {
+    <#
+    .SYNOPSIS
+        自动下载并安装 CUDA
+    #>
+    Log-Step "Attempting automatic CUDA installation..."
+
+    # 检查是否为管理员
+    $isAdmin = [bool]([System.Security.Principal.WindowsIdentity]::GetCurrent().Groups -match 'S-1-5-32-544')
+
+    if (-not $isAdmin) {
+        Log-Warn "Administrator privileges required for auto-install"
+        Log-Info "Please run as Administrator or use manual download"
+        Show-CudaDownloadLinks
+        return $false
+    }
+
+    # 使用 winget 安装 CUDA (如果可用)
+    if (Test-Command "winget") {
+        Log-Info "Installing CUDA via winget (this may take a while)..."
+
+        # 安装 CUDA Toolkit 12.1
+        $cudaInstall = winget install --id NVIDIA.CUDA -e --source winget 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Log-Success "CUDA installed, please restart terminal"
+            return $true
+        }
+        Log-Warn "winget CUDA install failed, trying direct download..."
+    }
+
+    # 打开下载页面
+    Log-Info "Opening CUDA download page..."
+    Start-Process "https://developer.nvidia.com/cuda-downloads"
+    Show-CudaDownloadLinks
+}
+
+function Show-CudaDownloadLinks {
+    <#
+    .SYNOPSIS
+        显示 CUDA 下载链接
+    #>
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  CUDA Download Links" -ForegroundColor White
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  1. CUDA Toolkit 12.1 (Required)" -ForegroundColor Green
+    Write-Host "     https://developer.nvidia.com/cuda-downloads" -ForegroundColor Gray
+    Write-Host "     Select: Windows > x86_64 > 12 > exe (network)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  2. cuDNN 8.9 (Required for PyTorch)" -ForegroundColor Green
+    Write-Host "     https://developer.nvidia.com/rdp/cudnn-download" -ForegroundColor Gray
+    Write-Host "     Select: cuDNN v8.9.x for CUDA 12.x > Windows" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Installation steps:" -ForegroundColor White
+    Write-Host "     1. Run CUDA Toolkit installer" -ForegroundColor Gray
+    Write-Host "     2. Extract cuDNN zip to CUDA installation directory" -ForegroundColor Gray
+    Write-Host "     3. Add to PATH: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\bin" -ForegroundColor Gray
+    Write-Host "     4. Restart terminal" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Alternative: Use CPU mode (slower, no CUDA needed)" -ForegroundColor Yellow
+    Write-Host ""
+
+    # 询问是否打开链接
+    if (Read-YesNo "Open CUDA download page in browser?") {
+        Start-Process "https://developer.nvidia.com/cuda-downloads"
+    }
+    if (Read-YesNo "Open cuDNN download page?") {
+        Start-Process "https://developer.nvidia.com/rdp/cudnn-download"
+    }
+}
+
+function Get-CudaInfo {
+    <#
+    .SYNOPSIS
+        获取 CUDA 状态信息字符串
+    #>
+    $status = Test-CUDA
+    if ($status.is_available) {
+        return "CUDA $($status.cuda_version) (Driver $($status.driver_version))"
+    }
+    return "Not installed (CPU mode recommended)"
+}
+
 function Install-Git {
     Log-Step "Installing Git..."
     if (Test-Command "winget") {
@@ -233,7 +447,7 @@ function Get-Project {
     # 检查目录是否非空（排除脚本文件）
     $items = Get-ChildItem -Path $PROJECT_ROOT -Force | Where-Object {
         $_.Name -ne ".git" -and $_.Name -ne "deploy.ps1" -and
-        $_.Name -ne "Deploy.bat" -and $_.Name -ne "deploy.sh"
+        $_.Name -ne "deploy.sh"
     }
     if ($items) {
         Log-Warn "Directory not empty, using existing files"
@@ -331,9 +545,25 @@ function Invoke-ConfigWizard {
     Write-Host ""
     Write-Host "  3/3 Processing device" -ForegroundColor Cyan
     Test-GPU
+
     if ($script:HAS_GPU) {
-        Write-Host "  GPU detected, CUDA recommended" -ForegroundColor Green
-        $device = Read-Input "Device (auto/cuda/cpu)" "auto"
+        Write-Host "  GPU detected, CUDA recommended for acceleration" -ForegroundColor Green
+        Write-Host "  $(Get-CudaInfo)" -ForegroundColor Gray
+        Write-Host ""
+
+        $deviceOptions = @("auto - Auto detect (recommended)", "cuda - Use GPU (requires CUDA)", "cpu - Use CPU (slower)")
+        foreach ($opt in $deviceOptions) { Write-Host "    $opt" -ForegroundColor White }
+
+        $device = Read-Input "Device" "auto"
+
+        # 如果用户选择了 cuda，检测 CUDA 环境
+        if ($device -match "^cuda$|^auto$") {
+            $cudaReady = Install-CUDA -Device $device
+            if (-not $cudaReady -and $device -eq "cuda") {
+                Log-Warn "CUDA not available, switching to CPU"
+                $device = "cpu"
+            }
+        }
     } else {
         Write-Host "  No GPU detected, will use CPU" -ForegroundColor Yellow
         $device = "cpu"
@@ -462,12 +692,27 @@ function Show-Menu {
     Write-Host "  AI Bird Photo Management" -ForegroundColor Gray
     Write-Host "  ========================================  " -ForegroundColor Cyan
     Write-Host ""
+
+    # 显示 CUDA 状态
+    $cudaStatus = Test-CUDA
+    if ($script:HAS_GPU) {
+        if ($cudaStatus.is_available) {
+            Write-Host "  GPU: $($cudaStatus.driver_version) | CUDA: $($cudaStatus.cuda_version)" -ForegroundColor Green
+        } else {
+            Write-Host "  GPU: Detected (CUDA not installed)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  Mode: CPU" -ForegroundColor Gray
+    }
+
+    Write-Host ""
     Write-Host "  [1] Start Deployment" -ForegroundColor White
     Write-Host "  [2] Configuration" -ForegroundColor White
     Write-Host "  [3] Update Project" -ForegroundColor White
-    Write-Host "  [4] Start Service" -ForegroundColor White
-    Write-Host "  [5] Help" -ForegroundColor White
-    Write-Host "  [6] Exit" -ForegroundColor White
+    Write-Host "  [4] Install CUDA (GPU Support)" -ForegroundColor White
+    Write-Host "  [5] Start Service" -ForegroundColor White
+    Write-Host "  [6] Help" -ForegroundColor White
+    Write-Host "  [7] Exit" -ForegroundColor White
     Write-Host ""
     Write-Host "  ========================================  " -ForegroundColor Cyan
 }
@@ -477,7 +722,7 @@ function Invoke-Main {
     $script:HAS_GPU = $false
     while ($true) {
         Show-Menu
-        $choice = Read-Host "Enter option (1-6)"
+        $choice = Read-Host "Enter option (1-7)"
         Write-Host ""
         switch ($choice) {
             "1" {
@@ -492,14 +737,28 @@ function Invoke-Main {
                 Write-Host ""
                 Log-Success "Deployment complete!"
                 Write-Host ""
-                Write-Host "  Next: Select [4] to start service, open http://localhost:8000" -ForegroundColor Gray
+                Write-Host "  Next: Select [5] to start service, open http://localhost:8000" -ForegroundColor Gray
                 Write-Host ""
                 Pause-Host
             }
             "2" { Invoke-ConfigWizard; Pause-Host }
             "3" { Get-Project; Pause-Host }
-            "4" { Start-WebServer }
-            "5" {
+            "4" {
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host "  CUDA Installation" -ForegroundColor Green
+                Write-Host "========================================" -ForegroundColor Cyan
+                Write-Host ""
+                Test-GPU
+                if ($script:HAS_GPU) {
+                    Install-CUDA -Device "cuda"
+                } else {
+                    Log-Warn "No NVIDIA GPU detected"
+                }
+                Write-Host ""
+                Pause-Host
+            }
+            "5" { Start-WebServer }
+            "6" {
                 Clear-Host
                 Write-Host ""
                 Write-Host "  Help" -ForegroundColor Cyan
@@ -510,18 +769,28 @@ function Invoke-Main {
                 Write-Host "    - EXIF metadata injection" -ForegroundColor Gray
                 Write-Host "    - Web interface management" -ForegroundColor Gray
                 Write-Host ""
+                Write-Host "  How to Run:" -ForegroundColor White
+                Write-Host "    - Right-click deploy.ps1 > 'Run with PowerShell'" -ForegroundColor Yellow
+                Write-Host "    - Or run in PowerShell: Set-ExecutionPolicy RemoteSigned; .\\deploy.ps1" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  GPU Acceleration:" -ForegroundColor White
+                Write-Host "    - Select [4] Install CUDA for GPU support" -ForegroundColor Gray
+                Write-Host "    - Requires NVIDIA GPU + CUDA Toolkit + cuDNN" -ForegroundColor Gray
+                Write-Host "    - GPU mode is ~10x faster than CPU" -ForegroundColor Gray
+                Write-Host ""
                 Write-Host "  Quick Start:" -ForegroundColor White
                 Write-Host "    1. Select [1] Start Deployment" -ForegroundColor Gray
                 Write-Host "    2. Configure photo directory" -ForegroundColor Gray
-                Write-Host "    3. Select [4] Start Service" -ForegroundColor Gray
+                Write-Host "    3. (Optional) Select [4] Install CUDA" -ForegroundColor Gray
+                Write-Host "    4. Select [5] Start Service" -ForegroundColor Gray
                 Write-Host ""
                 Write-Host "  Format: Year/yyyymmdd_Location/*.jpg" -ForegroundColor Gray
                 Write-Host ""
-                Write-Host "  GitHub: https://github.com/jiangyuyi/feather-trace" -ForegroundColor Gray
+                Write-Host "  GitHub:/jiangyuyi/feather https://github.com-trace" -ForegroundColor Gray
                 Write-Host ""
                 Pause-Host
             }
-            "6" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
+            "7" { Write-Host ""; Write-Host "  Goodbye!"; Write-Host ""; exit 0 }
             default { Log-Error "Invalid option"; Start-Sleep -Seconds 1 }
         }
     }

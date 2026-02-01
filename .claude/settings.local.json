@@ -33,7 +33,9 @@
       "Bash(\"D:/Code/gemini/feather_trace/venv/Scripts/python.exe\" \"D:/Code/gemini/feather_trace/test_path.py\")",
       "Bash(\"D:/Code/gemini/feather_trace/venv/Scripts/python.exe\" \"D:/Code/gemini/feather_trace/test_resolve.py\")",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(pwsh:*)",
+      "Bash(bash:*)"
     ]
   }
 }
