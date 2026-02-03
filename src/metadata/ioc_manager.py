@@ -7,7 +7,10 @@ from typing import List, Dict, Optional
 class IOCManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # Ensure parent directory exists
+        db_file = Path(db_path)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(str(db_file), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         # Removed persistent self.cursor for thread safety
         self._init_db()
@@ -138,8 +141,36 @@ class IOCManager:
             logging.error(f"Failed to load genus mapping: {e}")
             return {}
 
+    def load_csv_mapping(self, csv_path: str, sci_col: str, cn_col: str) -> Dict[str, str]:
+        """
+        从CSV文件加载分类映射
+        返回 {拉丁名: 中文名} 字典
+        """
+        try:
+            # Try different encodings
+            for encoding in ['utf-8-sig', 'utf-8', 'gbk', 'gb2312']:
+                try:
+                    df = pd.read_csv(csv_path, encoding=encoding)
+                    if sci_col in df.columns and cn_col in df.columns:
+                        mapping = {}
+                        for _, row in df.iterrows():
+                            sci = str(row[sci_col]).strip()
+                            cn = str(row[cn_col]).strip()
+                            if sci and cn and sci != 'nan' and cn != 'nan':
+                                mapping[sci] = cn
+                        logging.info(f"Loaded {len(mapping)} mappings from {csv_path}")
+                        return mapping
+                except:
+                    continue
+            logging.warning(f"Failed to load mapping from {csv_path}")
+            return {}
+        except Exception as e:
+            logging.error(f"Error loading CSV mapping {csv_path}: {e}")
+            return {}
+
     def import_from_excel(self, excel_path: str, genus_mapping: Dict[str, str] = None,
-                        order_mapping: Dict[str, str] = None, family_mapping: Dict[str, str] = None):
+                        order_mapping: Dict[str, str] = None, family_mapping: Dict[str, str] = None,
+                        refs_dir: str = None):
         """
         Import full IOC list from Excel into taxonomy table.
 
@@ -148,8 +179,38 @@ class IOCManager:
             genus_mapping: Optional {属拉丁名: 属中文名} mapping dictionary
             order_mapping: Optional {目拉丁名: 目中文名} mapping dictionary
             family_mapping: Optional {科拉丁名: 科中文名} mapping dictionary
+            refs_dir: Optional references directory for loading CSV mappings
         """
         logging.info(f"Importing taxonomy from {excel_path}...")
+
+        # Auto-load CSV mappings if not provided and refs_dir exists
+        if refs_dir:
+            refs = Path(refs_dir)
+            if not genus_mapping:
+                genus_csv = refs / 'bird_genus_mapping_complete.csv'
+                if genus_csv.exists():
+                    genus_mapping = self.load_csv_mapping(str(genus_csv), 'Genus_SCI', 'Genus_CN')
+                else:
+                    genus_csv = refs / 'bird_genus_mapping.csv'
+                    if genus_csv.exists():
+                        genus_mapping = self.load_csv_mapping(str(genus_csv), 'Genus_SCI', 'Genus_CN')
+            if not order_mapping:
+                order_csv = refs / 'bird_order_mapping_complete.csv'
+                if order_csv.exists():
+                    order_mapping = self.load_csv_mapping(str(order_csv), 'Order_SCI', 'Order_CN')
+                else:
+                    order_csv = refs / 'bird_order_mapping.csv'
+                    if order_csv.exists():
+                        order_mapping = self.load_csv_mapping(str(order_csv), 'Order_SCI', 'Order_CN')
+            if not family_mapping:
+                family_csv = refs / 'bird_family_mapping_complete.csv'
+                if family_csv.exists():
+                    family_mapping = self.load_csv_mapping(str(family_csv), 'Family_SCI', 'Family_CN')
+                else:
+                    family_csv = refs / 'bird_family_mapping.csv'
+                    if family_csv.exists():
+                        family_mapping = self.load_csv_mapping(str(family_csv), 'Family_SCI', 'Family_CN')
+
         if genus_mapping:
             logging.info(f"Using genus mapping with {len(genus_mapping)} entries")
         if order_mapping:
@@ -159,15 +220,23 @@ class IOCManager:
 
         try:
             df = pd.read_excel(excel_path)
-            df.columns = [c.strip() for c in df.columns]
+            df.columns = [str(c).strip() if hasattr(c, 'strip') else str(c) for c in df.columns]
 
             records = []
             for _, row in df.iterrows():
-                sci = str(row.get('IOC_15.1', '')).strip()
-                cn = str(row.get('Chinese', '')).strip()
-                fam_cn = str(row.get('Family', '')).strip()
-                ord_cn = str(row.get('Order', '')).strip()
-                eng = str(row.get('English', '')).strip()
+                # Helper to safely convert cell value to string
+                def safe_str(val):
+                    if pd.isna(val):
+                        return ''
+                    if hasattr(val, 'strip'):
+                        return str(val).strip()
+                    return str(val)
+
+                sci = safe_str(row.get('IOC_15.1', ''))
+                cn = safe_str(row.get('Chinese', ''))
+                fam_cn = safe_str(row.get('Family', ''))
+                ord_cn = safe_str(row.get('Order', ''))
+                eng = safe_str(row.get('English', ''))
 
                 if sci and sci != 'nan':
                     # Extract scientific names from IOC_15.1

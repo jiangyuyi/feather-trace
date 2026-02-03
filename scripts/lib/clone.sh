@@ -63,8 +63,29 @@ clone_project() {
             fi
         fi
 
+        # 记录是否原本是 GitHub
+        local isGithub=false
+        if [[ "$(git -C "$target_dir" remote get-url origin 2>/dev/null)" == *"github.com"* ]]; then
+             isGithub=true
+             # 如果是 GitHub，为了速度，先换成 Gitee（如果 repo_url 指向 Gitee）
+             if [[ "$repo_url" == *"gitee.com"* ]]; then
+                 log_info "Using Gitee mirror for fast update..."
+                 git -C "$target_dir" remote set-url origin "$repo_url"
+             fi
+        fi
+
         # 拉取更新
-        if git -C "$target_dir" pull origin "$branch" 2>/dev/null; then
+        log_info "正在拉取更新..."
+        git -C "$target_dir" pull origin "$branch" 2>/dev/null
+        local pullStatus=$?
+
+        # 如果原本是 GitHub，改回去
+        if [ "$isGithub" = true ]; then
+            log_info "Restoring remote to GitHub..."
+            git -C "$target_dir" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
+        fi
+
+        if [ $pullStatus -eq 0 ]; then
             log_success "项目已更新到最新版本"
             return 0
         else
@@ -91,6 +112,13 @@ clone_project() {
 
     if [ $? -eq 0 ] && [ -f "${target_dir}/settings.yaml" ]; then
         log_success "项目克隆成功"
+        
+        # 自动改回 GitHub
+        if [[ "$repo_url" == *"gitee.com"* ]]; then
+            log_info "Setting remote to GitHub..."
+            git -C "$target_dir" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
+        fi
+        
         return 0
     else
         log_error "项目克隆失败"

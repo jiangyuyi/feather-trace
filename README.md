@@ -1,13 +1,13 @@
 # FeatherTrace (羽迹) - 智能鸟类摄影管理系统
 
-**版本:** 1.0.7
-**状态:** 稳定 (修复 Web 界面 Unicode 路径问题)
+**版本:** 2.0.0
+**状态:** 新版发布 (云端识别 + 分离部署支持)
 
 FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
 
-本项目是我个人的第一个从零开始完全使用Vibe Coding的项目，使用了Gemini CLI 、Claude Code with MiniMax2.1/GLM4.7，作为一个观鸟爱好者，图片库的识别和整理一直是我的一大痛点，这个项目也算是圆了几年前的一个小梦想。
+本项目支持**本地 GPU/CPU 识别**和**云平台 API 识别**两种模式，支持分离部署架构。
 
-[查看更新日志](docs/CHANGELOG_v1.6_zh.md) | [架构文档](docs/ARCHITECTURE.md)
+[查看更新日志](docs/CHANGELOG_v1.6_zh.md) | [架构文档](docs/ARCHITECTURE.md) | [云端识别方案](docs/云端识别与分离部署方案.md)
 
 ---
 
@@ -17,9 +17,14 @@ FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。�
   * **智能扫描**: 递归扫描文件夹，支持按日期范围过滤，极大提升处理效率。
   * **混合解析**: 支持标准的父目录格式 (`yyyyMMdd-...`) 和基于正则的子目录解析。
 * **🧠 多引擎识别**:
-  * **引擎支持**: BioCLIP (本地 v1/v2), 懂鸟 (国内优化 API), HuggingFace API。
+  * **本地引擎**: BioCLIP v1/v2 (支持 GPU/CPU)
+  * **云平台**: HuggingFace, 魔搭 (ModelScope), 懂鸟 (Dongniao), 阿里云, 百度智能云
   * **Top-K 候选**: 自动保存 AI 的前 5 个预测结果供人工复核。
-  * **智能建议**: Web 界面提供“AI 备选”下拉菜单，一键修正物种。
+  * **智能建议**: Web 界面提供"AI 备选"下拉菜单，一键修正物种。
+* **📦 批量识别 API**:
+  * **REST API**: 提供标准化的批量识别接口
+  * **异步处理**: 支持大批量图片的异步识别
+  * **Webhook 回调**: 任务完成后自动回调通知
 * **🛠️ 动态归档**:
   * **自动整理**: 当您修正物种名时，系统会自动重命名文件并将其移动到正确的分类文件夹中。
   * **元数据**: 自动写入标准化的 EXIF/IPTC 数据（标题、关键词）。
@@ -105,6 +110,12 @@ bash scripts/deploy.sh web
 | `update` | 更新项目 |
 | `cuda` | 安装 CUDA (GPU 支持) |
 | `web` | 启动 Web 服务 |
+| `docker:local` | Docker 本地部署 |
+| `docker:cpu` | Docker CPU 识别服务 |
+| `docker:gpu` | Docker GPU 识别服务 |
+| `docker:all` | Docker 完整分离部署 |
+| `cloud:config` | 配置云平台 API |
+| `cloud:list` | 列出可用云平台 |
 | `help` | 显示帮助 |
 
 #### 部署流程
@@ -140,6 +151,191 @@ bash scripts/deploy.sh web
 #### GitHub 国内访问
 
 脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/feather-trace），确保国内用户可以快速下载。
+
+---
+
+### 🐳 Docker 部署
+
+FeatherTrace 支持 Docker 容器化部署，提供 CPU 和 GPU 两个版本。
+
+#### Docker 一键启动
+
+```bash
+# 本地一体化部署
+bash scripts/deploy.sh docker:local
+
+# 仅启动 CPU 识别服务
+bash scripts/deploy.sh docker:cpu
+
+# 仅启动 GPU 识别服务（需要 NVIDIA Docker）
+bash scripts/deploy.sh docker:gpu
+
+# 完整分离部署（Web + CPU + GPU + Redis）
+bash scripts/deploy.sh docker:all
+```
+
+#### Docker Compose 配置
+
+**本地一体化部署 (docker-compose.yml):**
+```yaml
+services:
+  feathertrace:
+    build: .
+    ports:
+      - "8000:8000"
+```
+
+**分离部署 (docker-compose.remote.yml):**
+```yaml
+services:
+  # CPU 识别服务
+  recognition-cpu:
+    build:
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "8080:8000"
+
+  # GPU 识别服务
+  recognition-gpu:
+    build:
+      dockerfile: Dockerfile.gpu
+    ports:
+      - "8081:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 消息队列（大批量任务）
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+```
+
+#### Docker 镜像说明
+
+| 镜像 | Dockerfile | 说明 |
+|------|-----------|------|
+| CPU 版 | `Dockerfile.cpu` | 无 GPU 环境使用，资源占用约 4GB |
+| GPU 版 | `Dockerfile.gpu` | 需要 NVIDIA Docker，支持 CUDA 加速 |
+
+---
+
+### ☁️ 云平台配置
+
+FeatherTrace 支持多种云平台识别服务，无需本地 GPU 即可获得高质量识别结果。
+
+#### 支持的云平台
+
+| 平台 | 说明 | 获取方式 |
+|------|------|---------|
+| **HuggingFace** | BioCLIP 等开源模型 | [获取 Token](https://huggingface.co/settings/tokens) |
+| **魔搭 (ModelScope)** | 国内镜像，鸟类分类模型 | [获取 Token](https://modelscope.cn/my/settings/token) |
+| **懂鸟 (Dongniao)** | 国内专业鸟类识别 API | [申请 Access Key](https://ai.open.hhodata.com/) |
+| **阿里云** | 图像标签识别服务 | [控制台](https://ram.console.aliyun.com/) |
+| **百度智能云** | 图像识别 API | [控制台](https://ai.baidu.com/) |
+
+#### 配置方法
+
+```bash
+# 交互式配置云平台 API Keys
+bash scripts/deploy.sh cloud:config
+
+# 列出已配置的平台
+bash scripts/deploy.sh cloud:list
+```
+
+#### 环境变量配置
+
+```bash
+# HuggingFace
+export HF_TOKEN="your_huggingface_token"
+
+# 魔搭
+export MODELSCOPE_TOKEN="your_modelscope_token"
+
+# 懂鸟
+export DONGNIAO_API_KEY="your_dongniao_api_key"
+
+# 阿里云
+export ALIYUN_ACCESS_KEY_ID="your_access_key_id"
+export ALIYUN_ACCESS_KEY_SECRET="your_access_key_secret"
+
+# 百度云
+export BAIDU_API_KEY="your_api_key"
+export BAIDU_SECRET_KEY="your_secret_key"
+```
+
+#### API 调用示例
+
+```bash
+# 单张识别
+curl -X POST http://localhost:8000/api/recognition/recognize \
+  -H "Content-Type: application/json" \
+  -d '{"image_path": "/path/to/bird.jpg", "platform": "huggingface", "top_k": 5}'
+
+# 批量识别
+curl -X POST http://localhost:8000/api/recognition/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "images": [
+      {"image_path": "/path/to/bird1.jpg", "platform": "huggingface"},
+      {"image_path": "/path/to/bird2.jpg", "platform": "local"}
+    ],
+    "webhook_url": "https://your-callback.com/notify"
+  }'
+```
+
+---
+
+### 🔧 分离部署架构
+
+对于大规模部署场景，FeatherTrace 支持将 Web 服务和识别服务分离部署：
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    本地 FeatherTrace                  │
+│  ┌─────────────┐  ┌────────────────────────────┐   │
+│  │  Web UI     │  │  Pipeline                  │   │
+│  │  :8000      │  │  YOLO Detection            │   │
+│  └─────────────┘  └────────────┬───────────────┘   │
+│                               │                     │
+│                      ┌────────▼────────┐           │
+│                      │  Batch API      │           │
+│                      │  /api/recognize │           │
+│                      └────────┬────────┘           │
+│                               │                     │
+└───────────────────────────────┼─────────────────────┘
+                                │ HTTP
+                                ▼
+                    ┌─────────────────────┐
+                    │  识别服务集群        │
+                    ├─────────────────────┤
+                    │ recognition-cpu:8080│
+                    │ recognition-gpu:8081│
+                    │ redis:6379          │
+                    └─────────────────────┘
+```
+
+#### 启动分离部署
+
+```bash
+# 1. 启动识别服务
+docker compose -f docker-compose.remote.yml up -d recognition-cpu
+
+# 2. 配置 Web 服务指向识别服务
+# 编辑 config/settings.yaml
+# recognition:
+#   mode: "api"
+#   api_endpoint: "http://localhost:8080"
+
+# 3. 启动 Web 服务
+python src/web/app.py
+```
 
 ---
 
@@ -219,14 +415,48 @@ python scripts/download_model.py
 FeatherTrace 使用 YAML 进行配置。
 
 1. **主设置**: 编辑 `config/settings.yaml` 来定义您的照片源路径和输出结构。
-2. **密钥**: 如果使用云端 API (懂鸟或 HuggingFace)，请复制示例密钥文件：
+2. **密钥**: 如果使用云端 API，请编辑 `config/secrets.yaml` 填入您的 API Key：
 
    ```bash
-   # Windows 复制命令
-   copy config\secrets.example.yaml config\secrets.yaml
+   # 创建密钥配置文件
+   bash scripts/deploy.sh cloud:config
+
+   # 或手动创建
+   cat > config/secrets.yaml << EOF
+   cloud:
+     huggingface:
+       api_token: ${HF_TOKEN}
+     modelscope:
+       api_token: ${MODELSCOPE_TOKEN}
+     dongniao:
+       api_key: ${DONGNIAO_API_KEY}
+     aliyun:
+       access_key_id: ${ALIYUN_ACCESS_KEY_ID}
+       access_key_secret: ${ALIYUN_ACCESS_KEY_SECRET}
+     baidu:
+       api_key: ${BAIDU_API_KEY}
+       secret_key: ${BAIDU_SECRET_KEY}
+   EOF
    ```
 
-   然后编辑 `config/secrets.yaml` 填入您的 API Key。
+3. **API 认证 (可选)**: 如需对外提供 API 服务，可启用认证：
+
+   ```yaml
+   # config/settings.yaml
+   api:
+     enabled: true
+     rate_limit: 1000/day
+     quota: 10000/month
+   ```
+
+   使用时在请求头中添加 `X-API-Key`：
+
+   ```bash
+   curl -X POST http://localhost:8000/api/recognition/recognize \
+     -H "X-API-Key: your_api_key" \
+     -H "Content-Type: application/json" \
+     -d '{"image_path": "/path/to/bird.jpg", "platform": "local"}'
+   ```
 
 👉 **[阅读完整配置指南](docs/CONFIGURATION.md)** 了解所有可用选项。
 
@@ -269,6 +499,18 @@ python src/web/app.py
 python src/pipeline_runner.py --start 20240101 --end 20240131
 ```
 
+#### C. 独立识别服务 (API Server)
+
+如需仅运行识别 API 服务（供其他系统调用）：
+
+```bash
+# 启动独立识别服务
+python src/recognition_service.py
+
+# 服务将在 http://localhost:8000 提供 REST API
+# API 文档: http://localhost:8000/docs
+```
+
 ---
 
 ### 5. 常见问题
@@ -285,6 +527,39 @@ A: 在 `settings.yaml` 中将 `device` 改为 `cpu`，或减小 `local.inference
 **Q: Windows 中文路径乱码**
 A: 确保系统区域设置支持 UTF-8，或使用英文路径。
 
+**Q: 如何选择使用本地识别还是云平台识别？**
+A: 根据需求选择：
+- **本地 BioCLIP**: 免费、隐私保护好、无需网络，适合日常使用
+- **云平台**: 无需 GPU 硬件、模型更新及时、适合批量处理
+
+**Q: 云平台识别的费用是多少？**
+A: 各平台定价不同：
+- HuggingFace: 免费额度有限，超出后按调用计费
+- 魔搭社区: 提供免费额度
+- 阿里云/百度云: 按调用次数计费，价格较低
+
+**Q: 批量识别 API 如何使用？**
+A: 批量识别支持异步处理：
+```python
+import requests
+
+# 创建批量任务
+response = requests.post("http://localhost:8000/api/recognition/batch", json={
+    "images": [
+        {"image_path": "/path/to/bird1.jpg", "platform": "local"},
+        {"image_path": "/path/to/bird2.jpg", "platform": "huggingface"}
+    ],
+    "webhook_url": "https://your-callback.com/notify"
+})
+batch_id = response.json()["batch_id"]
+
+# 查询进度
+while True:
+    status = requests.get(f"http://localhost:8000/api/recognition/batch/{batch_id}")
+    if status.json()["status"] == "completed":
+        break
+```
+
 ---
 
 ## 🤝 致谢
@@ -292,6 +567,10 @@ A: 确保系统区域设置支持 UTF-8，或使用英文路径。
 * **IOC World Bird List**: [https://www.worldbirdnames.org/](https://www.worldbirdnames.org/) (分类学标准)
 * **BioCLIP**: [https://imageomics.github.io/bioclip/](https://imageomics.github.io/bioclip/) (视觉模型)
 * **懂鸟**: [https://ai.open.hhodata.com/](https://ai.open.hhodata.com/) (中国鸟类识别 API)
+* **HuggingFace**: [https://huggingface.co/](https://huggingface.co/) (云端推理 API)
+* **魔搭社区**: [https://modelscope.cn/](https://modelscope.cn/) (国内模型服务)
+* **阿里云**: [https://www.aliyun.com/](https://www.aliyun.com/) (图像识别服务)
+* **百度智能云**: [https://ai.baidu.com/](https://ai.baidu.com/) (图像识别服务)
 
 ---
 

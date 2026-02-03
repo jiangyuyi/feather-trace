@@ -422,12 +422,20 @@ function Get-Project {
 
         # 如果是 GitHub，直接切换到 Gitee（不测试连通性，避免超时）
         if ($remoteUrl -and $remoteUrl.Contains("github.com")) {
-            Log-Info "Switching remote to Gitee mirror..."
+            Log-Info "Using Gitee mirror for fast update..."
             git -C $PROJECT_ROOT remote set-url origin $GITEE_MIRROR 2>&1 | Out-Null
+            $isGithub = $true
         }
 
         Log-Info "Updating project..."
         $pullResult = git -C $PROJECT_ROOT pull origin master 2>&1 | Out-String
+        
+        # 如果之前是 GitHub，操作完改回去
+        if ($isGithub) {
+            Log-Info "Restoring remote to GitHub..."
+            git -C $PROJECT_ROOT remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
+        }
+
         if ($LASTEXITCODE -eq 0) {
             Log-Success "Project updated"
             return $true
@@ -459,6 +467,11 @@ function Get-Project {
     $null = git clone --depth 1 $GITEE_MIRROR $PROJECT_ROOT 2>&1
     if ($LASTEXITCODE -eq 0 -or (Test-Path "$PROJECT_ROOT\settings.yaml")) {
         Log-Success "Cloned from Gitee"
+        
+        # 自动改回 GitHub
+        Log-Info "Setting remote to GitHub..."
+        git -C $PROJECT_ROOT remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
+        
         return $true
     }
 

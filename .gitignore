@@ -12,3 +12,4 @@ data/models/
 *.log
 *.whl
 config/secrets.yaml
+.claude/

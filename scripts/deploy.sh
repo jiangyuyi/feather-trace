@@ -437,13 +437,24 @@ get_project() {
         local remoteUrl=$(git -C "$PROJECT_ROOT" remote get-url origin 2>/dev/null)
 
         # 如果是 GitHub，切换到 Gitee
+        local isGithub=false
         if [ -n "$remoteUrl" ] && [[ "$remoteUrl" == *"github.com"* ]]; then
-            log_info "Switching to Gitee mirror..."
+            log_info "Using Gitee mirror for fast update..."
             git -C "$PROJECT_ROOT" remote set-url origin "$GITEE_MIRROR" 2>/dev/null
+            isGithub=true
         fi
 
         log_info "Updating project..."
-        if git -C "$PROJECT_ROOT" pull origin master 2>/dev/null; then
+        git -C "$PROJECT_ROOT" pull origin master 2>/dev/null
+        local pullStatus=$?
+
+        # 如果原先是 GitHub，改回去
+        if [ "$isGithub" = true ]; then
+            log_info "Restoring remote to GitHub..."
+            git -C "$PROJECT_ROOT" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
+        fi
+
+        if [ $pullStatus -eq 0 ]; then
             log_success "Project updated"
             return 0
         else
@@ -469,6 +480,11 @@ get_project() {
     log_info "Cloning from Gitee..."
     if git clone --depth 1 "$GITEE_MIRROR" "$PROJECT_ROOT" 2>/dev/null; then
         log_success "Cloned from Gitee"
+        
+        # 自动改回 GitHub
+        log_info "Setting remote to GitHub..."
+        git -C "$PROJECT_ROOT" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
+        
         return 0
     fi
 
@@ -664,6 +680,226 @@ start_web_server() {
 }
 
 #===============================================================================
+# Docker Deployment
+#===============================================================================
+
+test_docker() {
+    if command_exists docker; then
+        local version=$(docker --version 2>/dev/null)
+        log_info "Docker installed: $version"
+        return 0
+    fi
+    log_warn "Docker not found"
+    return 1
+}
+
+install_docker() {
+    log_step "Installing Docker..."
+    if is_linux; then
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        sudo usermod -aG docker $USER
+    elif is_macos && command_exists brew; then
+        brew install --cask docker
+    elif is_windows && command_exists winget; then
+        winget install --id Docker.DockerDesktop -e --source winget
+    else
+        log_error "Cannot install Docker automatically"
+        log_info "Download: https://www.docker.com/get-started"
+        return 1
+    fi
+    test_docker
+}
+
+start_docker_local() {
+    log_step "Starting Docker (local mode)..."
+
+    if ! test_docker; then
+        if ask_yes_no "Install Docker?"; then install_docker; fi
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    # 检查是否有 GPU
+    if test_gpu && command_exists nvidia-docker; then
+        echo -e "${CYAN}  Using GPU profile${NC}"
+        docker compose up -d feathertrace-gpu
+    else
+        echo -e "${CYAN}  Using CPU mode${NC}"
+        docker compose up -d feathertrace
+    fi
+
+    echo ""
+    echo -e "${GREEN}Web UI: http://localhost:8000${NC}"
+    echo -e "${GREEN}Recognition API: http://localhost:8000/api/recognition${NC}"
+}
+
+start_docker_cpu() {
+    log_step "Starting CPU recognition service..."
+
+    if ! test_docker; then
+        log_error "Docker not found"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+    docker compose -f docker-compose.remote.yml up -d recognition-cpu
+
+    echo ""
+    echo -e "${GREEN}Recognition Service (CPU): http://localhost:8080${NC}"
+}
+
+start_docker_gpu() {
+    log_step "Starting GPU recognition service..."
+
+    if ! test_docker; then
+        log_error "Docker not found"
+        return 1
+    fi
+
+    if ! test_gpu; then
+        log_error "No GPU detected"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+    docker compose -f docker-compose.remote.yml up -d recognition-gpu
+
+    echo ""
+    echo -e "${GREEN}Recognition Service (GPU): http://localhost:8081${NC}"
+}
+
+start_docker_all() {
+    log_step "Starting full Docker stack..."
+
+    if ! test_docker; then
+        log_error "Docker not found"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+    docker compose -f docker-compose.yml -f docker-compose.remote.yml up -d
+
+    echo ""
+    echo -e "${GREEN}Web UI: http://localhost:8000${NC}"
+    echo -e "${GREEN}Recognition API (CPU): http://localhost:8080${NC}"
+    echo -e "${GREEN}Recognition API (GPU): http://localhost:8081${NC}"
+    echo -e "${GREEN}Redis (queue): localhost:6379${NC}"
+}
+
+#===============================================================================
+# Cloud Platform Configuration
+#===============================================================================
+
+configure_cloud() {
+    log_step "Configuring cloud platforms..."
+    echo ""
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${CYAN}  ${WHITE}Cloud Platform Configuration${NC}               ${CYAN}"
+    echo -e "${CYAN}========================================${NC}"
+    echo ""
+
+    local secrets_path="${PROJECT_ROOT}/config/secrets.yaml"
+
+    # 确保 secrets.yaml 存在
+    if [ ! -f "$secrets_path" ]; then
+        cat > "$secrets_path" << 'EOF'
+# FeatherTrace secrets
+# Cloud platform API keys
+
+# Local recognition (optional)
+local:
+  enabled: true
+
+# Cloud platforms
+cloud:
+  huggingface:
+    api_token: ${HF_TOKEN}
+    model_id: hf-hub:imageomics/bioclip
+
+  modelscope:
+    api_token: ${MODELSCOPE_TOKEN}
+    model_id: damo/cv_resnet50_image-classification_birds
+
+  aliyun:
+    access_key_id: ${ALIYUN_ACCESS_KEY_ID}
+    access_key_secret: ${ALIYUN_ACCESS_KEY_SECRET}
+
+  baidu:
+    api_key: ${BAIDU_API_KEY}
+    secret_key: ${BAIDU_SECRET_KEY}
+
+# API authentication
+api_keys:
+  - name: default
+    key: ${FEATHERTRACE_API_KEY}
+    rate_limit: 1000/day
+    quota: 10000/month
+EOF
+        log_success "Created secrets template"
+    fi
+
+    echo -e "  ${WHITE}Cloud Platform API Keys${NC}"
+    echo ""
+    echo -e "  ${GREEN}HuggingFace:${NC}"
+    echo -e "    Set HF_TOKEN environment variable or edit $secrets_path"
+    echo -e "    Get token: https://huggingface.co/settings/tokens"
+    echo ""
+    echo -e "  ${GREEN}ModelScope:${NC}"
+    echo -e "    Set MODELSCOPE_TOKEN environment variable or edit $secrets_path"
+    echo -e "    Get token: https://modelscope.cn/my/settings/token"
+    echo ""
+    echo -e "  ${GREEN}Aliyun:${NC}"
+    echo -e "    Configure access_key_id and access_key_secret in secrets.yaml"
+    echo -e "    Get credentials: https://ram.console.aliyun.com/..."
+    echo ""
+    echo -e "  ${GREEN}Baidu:${NC}"
+    echo -e "    Configure api_key and secret_key in secrets.yaml"
+    echo -e "    Get credentials: https://ai.baidu.com/tech/imagerecognition"
+    echo ""
+
+    if ask_yes_no "Open configuration file for editing?" "n"; then
+        if command_exists nano; then
+            nano "$secrets_path"
+        elif command_exists vim; then
+            vim "$secrets_path"
+        else
+            log_info "Edit manually: $secrets_path"
+        fi
+    fi
+}
+
+list_cloud_platforms() {
+    log_step "Available cloud platforms..."
+    echo ""
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${CYAN}  ${WHITE}Cloud Platforms${NC}                             ${CYAN}"
+    echo -e "${CYAN}========================================${NC}"
+    echo ""
+    echo -e "  ${GREEN}1. HuggingFace${NC}"
+    echo -e "     Status: $([ -n "$HF_TOKEN" ] && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
+    echo -e "     Models: microsoft/BioCLIP, hf-hub:imageomics/bioclip"
+    echo -e "     URL: https://huggingface.co/"
+    echo ""
+    echo -e "  ${GREEN}2. ModelScope (魔搭)${NC}"
+    echo -e "     Status: $([ -n "$MODELSCOPE_TOKEN" ] && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
+    echo -e "     Models: damo/cv_resnet50_image-classification_birds"
+    echo -e "     URL: https://modelscope.cn/"
+    echo ""
+    echo -e "  ${GREEN}3. Aliyun (阿里云)${NC}"
+    echo -e "     Status: $([ -f "${PROJECT_ROOT}/config/secrets.yaml" ] && grep -q "access_key_id" "${PROJECT_ROOT}/config/secrets.yaml" && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
+    echo -e "     Service: 图像标签识别"
+    echo -e "     URL: https://www.aliyun.com/product/imagerecog"
+    echo ""
+    echo -e "  ${GREEN}4. Baidu (百度云)${NC}"
+    echo -e "     Status: $([ -f "${PROJECT_ROOT}/config/secrets.yaml" ] && grep -q "api_key" "${PROJECT_ROOT}/config/secrets.yaml" && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
+    echo -e "     Service: 图像识别"
+    echo -e "     URL: https://ai.baidu.com/tech/imagerecognition"
+    echo ""
+}
+
+#===============================================================================
 # 使用说明
 #===============================================================================
 
@@ -679,25 +915,39 @@ Usage:
   $0 [command]
 
 Commands:
-  deploy      Full deployment (install + config)
-  install     Install dependencies only
-  config      Configuration wizard
-  update      Update project
-  cuda        Install CUDA (GPU support)
-  web         Start Web server
-  help        Show this help
+  deploy           Full deployment (install + config)
+  install          Install dependencies only
+  config           Configuration wizard
+  update           Update project
+  cuda             Install CUDA (GPU support)
+  web              Start Web server
+  docker:local     Start with Docker (local)
+  docker:cpu       Start CPU container only
+  docker:gpu       Start GPU container (requires GPU)
+  docker:all       Full Docker stack (local + recognition services)
+  cloud:config     Configure cloud platform API keys
+  cloud:list       List available cloud platforms
+  help             Show this help
 
 Examples:
   $0 deploy           # Full deployment
   $0 config           # Configure only
   $0 web              # Start Web service
   $0 cuda             # Install CUDA
+  $0 docker:local     # Start with Docker
+  $0 cloud:config     # Configure cloud platforms
 
 Quick Start:
   1. Run: $0 deploy
   2. Configure photo directory
   3. Run: $0 web
   4. Open: http://localhost:8000
+
+Cloud Platforms:
+  - HuggingFace: Use HF_TOKEN environment variable
+  - ModelScope: Use MODELSCOPE_TOKEN environment variable
+  - Aliyun: Configure access_key_id/secret in secrets.yaml
+  - Baidu: Configure api_key/secret_key in secrets.yaml
 
 EOF
 }
@@ -790,6 +1040,24 @@ main() {
             ;;
         web|w)
             start_web_server
+            ;;
+        docker:local|dl)
+            start_docker_local
+            ;;
+        docker:cpu|dc)
+            start_docker_cpu
+            ;;
+        docker:gpu|dg)
+            start_docker_gpu
+            ;;
+        docker:all|da)
+            start_docker_all
+            ;;
+        cloud:config|cc)
+            configure_cloud
+            ;;
+        cloud:list|cl)
+            list_cloud_platforms
             ;;
         help|-h|--help|"")
             show_help

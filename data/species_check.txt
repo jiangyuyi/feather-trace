@@ -1,0 +1,35 @@
+=== Tinamidae species ===
+  Tinamus tao -> 灰䳍
+  Tinamus solitarius -> 孤䳍
+  Tinamus osgoodi -> 黑䳍
+  Tinamus major -> 大䳍
+  Tinamus guttatus -> 白喉䳍
+  Nothocercus bonapartei -> 黑头林䳍
+  Nothocercus julius -> 红头林䳍
+  Nothocercus nigrocapillus -> 灰头白喉林䳍
+  Crypturellus berlepschi -> 伯氏穴䳍
+  Crypturellus cinereus -> 灰穴䳍
+  Crypturellus soui -> 小穴䳍
+  Crypturellus ptaritepui -> 灰喉穴䳍
+  Crypturellus obsoletus -> 褐穴䳍
+  Crypturellus undulatus -> 波斑穴䳍
+  Crypturellus transfasciatus -> 淡眉穴䳍
+
+=== Spheniscidae species ===
+  Aptenodytes patagonicus -> 王企鹅
+  Aptenodytes forsteri -> 帝企鹅
+  Pygoscelis adeliae -> 阿德利企鹅
+  Pygoscelis antarcticus -> 纹颊企鹅
+  Pygoscelis papua -> 白眉企鹅
+  Eudyptula minor -> 小企鹅
+  Spheniscus mendiculus -> 加岛企鹅
+  Spheniscus humboldti -> 秘鲁企鹅
+  Spheniscus magellanicus -> 南美企鹅
+  Spheniscus demersus -> 南非企鹅
+
+=== Apterygidae species ===
+  Apteryx australis -> 褐几维
+  Apteryx mantelli -> 北岛褐几维
+  Apteryx rowi -> 白眶几维
+  Apteryx owenii -> 小斑几维
+  Apteryx maxima -> 大斑几维

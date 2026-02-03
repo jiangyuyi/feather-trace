@@ -103,10 +103,11 @@ class FeatherTracePipeline:
         self.batch_lock = threading.Lock() # Lock for buffer access
         self.current_candidate_labels = None
         self.inference_batch_size = self.config.get('recognition', {}).get('local', {}).get('inference_batch_size', 16)
-        
-        # Load taxonomy and config lists
-        self.foreign_countries = self._load_list(self.config['paths']['foreign_list'])
-        self.china_allowlist = self._load_list(self.config['paths']['china_list'])
+
+        # Load taxonomy and config lists (with defaults for backward compatibility)
+        paths_config = self.config.get('paths', {})
+        self.foreign_countries = self._load_list(paths_config.get('foreign_list', 'config/dictionaries/foreign_countries.txt'))
+        self.china_allowlist = self._load_list(paths_config.get('china_list', 'config/dictionaries/china_bird_list.txt'))
         self.all_labels = self._get_taxonomy_labels()
 
     def _load_list(self, path_str):
@@ -137,19 +138,44 @@ class FeatherTracePipeline:
         # Check if DB is empty
         cursor = self.db.conn.execute("SELECT count(*) FROM taxonomy")
         count = cursor.fetchone()[0]
-        
+
         if count == 0:
             logging.warning("Taxonomy table is empty! Attempting auto-import from Excel...")
-            excel_path = self.config['paths']['ioc_list_path']
-            if Path(excel_path).exists():
-                self.db.import_from_excel(excel_path)
-                # Re-check count
-                cursor = self.db.conn.execute("SELECT count(*) FROM taxonomy")
-                count = cursor.fetchone()[0]
-                logging.info(f"Auto-import completed. Taxonomy count: {count}")
+
+            # Try to find IOC Excel file
+            refs_dir = Path(self.config['paths'].get('references_path', 'data/references'))
+            excel_file = None
+
+            # First try configured path (with quotes handling for spaces)
+            configured_path = self.config['paths'].get('ioc_list_path', '')
+            if configured_path:
+                p = Path(configured_path)
+                if p.exists():
+                    excel_file = p
+                    logging.info(f"Using configured IOC file: {excel_file}")
+
+            # If not found, search in references directory for Multiling IOC file
+            if excel_file is None and refs_dir.exists():
+                for f in sorted(refs_dir.glob("*.xlsx")):
+                    # Look for Multiling IOC files (they have the correct format)
+                    name_lower = f.name.lower()
+                    if 'multiling' in name_lower and 'ioc' in name_lower:
+                        excel_file = f
+                        logging.info(f"Found IOC file: {excel_file}")
+                        break
+
+            if excel_file and excel_file.exists():
+                try:
+                    refs_dir = str(self.config['paths'].get('references_path', 'data/references'))
+                    self.db.import_from_excel(str(excel_file), refs_dir=refs_dir)
+                    # Verify import
+                    cursor = self.db.conn.execute("SELECT count(*) FROM taxonomy")
+                    count = cursor.fetchone()[0]
+                    logging.info(f"Auto-import completed. Taxonomy count: {count}")
+                except Exception as e:
+                    logging.error(f"Failed to import Excel: {e}")
             else:
-                logging.error(f"Cannot auto-import: Excel file not found at {excel_path}")
-                return []
+                logging.error(f"IOC Excel file not found. Searched: {refs_dir}")
 
         # Fetch all scientific names from taxonomy table
         cursor = self.db.conn.execute("SELECT scientific_name FROM taxonomy")
@@ -254,10 +280,15 @@ class FeatherTracePipeline:
         img_width = item['width']
         img_height = item['height']
         file_hash = item['file_hash']
-        
+
+        # Initialize default values
+        is_low_conf = False
+        cn_name = "Unknown"
+        sci_name = "Unknown"
+        user_comment = "No recognition results."
+
         if not results:
             top_result = {"scientific_name": "Unknown", "confidence": 0.0}
-            user_comment = "No recognition results."
         else:
             top_result = results[0]
             top_conf_pct = top_result['confidence'] * 100
@@ -328,6 +359,9 @@ class FeatherTracePipeline:
                 description = f"{cn_name} ({sci_name})"
                 keywords = [cn_name, sci_name, meta.get('location_tag'), "FeatherTrace"]
 
+            # Filter out None values from keywords
+            keywords = [k for k in keywords if k is not None]
+
             self.exif_writer.write_metadata(str(final_path), {
                 'ImageDescription': description,
                 'XMP:Description': description,
@@ -357,6 +391,9 @@ class FeatherTracePipeline:
             
         except Exception as e:
             logging.error(f"Failed to archive {entry.name}: {e}")
+            # Log more details for debugging
+            import traceback
+            logging.debug(traceback.format_exc())
 
     def process_image(self, provider, entry, meta):
         # 1. Deduplication

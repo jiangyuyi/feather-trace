@@ -22,7 +22,7 @@ class LocalBirdRecognizer(BirdRecognizer):
         
         self.model_id = model_map.get(model_name.lower(), model_map["bioclip"])
         self.model_type_slug = model_name.lower()
-        
+
         logging.info(f"Loading {model_name} ({self.model_id}) on {self.device}...")
         
         self.cached_labels = None
@@ -44,6 +44,25 @@ class LocalBirdRecognizer(BirdRecognizer):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # Suppress verbose logging during model download
+        import logging
+        _verbose_loggers = []
+
+        # Store and suppress root logger level
+        root_logger = logging.getLogger()
+        _verbose_loggers.append((None, root_logger.level))  # None marks root logger
+        root_logger.setLevel(logging.WARNING)
+
+        # Suppress open_clip factory logger
+        logger = logging.getLogger('open_clip.factory')
+        _verbose_loggers.append((logger, logger.level))
+        logger.setLevel(logging.WARNING)
+
+        # Also suppress httpx
+        logger = logging.getLogger('httpx')
+        _verbose_loggers.append((logger, logger.level))
+        logger.setLevel(logging.WARNING)
 
         # Check for local model in specific subfolder
         local_model_root = Path("data/models")
@@ -85,7 +104,15 @@ class LocalBirdRecognizer(BirdRecognizer):
         
         # Ensure tokenizer is ready
         self.tokenizer = open_clip.get_tokenizer('ViT-B-16')
-        
+
+        # Restore logging levels
+        for logger, level in _verbose_loggers:
+            if logger is None:
+                # Restore root logger level
+                logging.getLogger().setLevel(level)
+            else:
+                logger.setLevel(level)
+
         # Verify model device
         try:
             param_device = next(self.model.parameters()).device
@@ -94,7 +121,7 @@ class LocalBirdRecognizer(BirdRecognizer):
                 logging.warning("CRITICAL: Model requested on CUDA but parameters are on CPU!")
         except Exception as e:
             logging.warning(f"Could not verify model device: {e}")
-            
+
         logging.info("Model loaded successfully.")
 
     def _get_text_features(self, candidate_labels):

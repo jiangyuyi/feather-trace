@@ -27,6 +27,7 @@ from src.utils.config_loader import load_config
 from src.core.io.fs_manager import FileSystemManager
 from src.pipeline_runner import FeatherTracePipeline # Import Pipeline
 from src.core.io.path_generator import PathGenerator # Added import
+from src.web.routes.recognition import router as recognition_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +73,9 @@ class TaskManager:
 
     def _run_pipeline_thread(self, start_date, end_date):
         try:
+            # Ensure working directory is project root for relative path resolution
+            os.chdir(str(BASE_DIR))
+
             # Setup custom logger to capture output
             log_capture = logging.getLogger()
             handler = ListLogHandler(self.logs)
@@ -132,6 +136,9 @@ if not processed_dir.exists():
 
 # Note: Using custom route for /static/processed (see serve_processed_file above)
 # because StaticFiles has issues with Unicode paths on Windows
+
+# Include recognition API routes
+app.include_router(recognition_router)
 
 # Mount allowed roots for "Original View" - use follow_symlink=True for Unicode path support
 for idx, root in enumerate(allowed_roots):

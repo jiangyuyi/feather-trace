@@ -34,7 +34,8 @@ paths:
   # 数据库和字典路径 (通常保持默认即可)
   db_path: "data/db/feathertrace.db"
   ioc_list_path: "data/references/Multiling IOC 15.1_d.xlsx"
-  china_list: "config/dictionaries/china_bird_list.txt"
+  foreign_list: "config/dictionaries/foreign_bird_list.txt"  # 国外地名列表
+  china_list: "config/dictionaries/china_bird_list.txt"     # 中国地名列表
 
 processing:
   # 硬件设备: cuda (NVIDIA 显卡), cpu, 或 auto

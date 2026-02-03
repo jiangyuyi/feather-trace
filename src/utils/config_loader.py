@@ -2,6 +2,20 @@ import yaml
 import logging
 from pathlib import Path
 
+# 全局配置缓存
+_config_cache = None
+
+def get_config() -> dict:
+    """
+    Get the application configuration (cached).
+
+    This is a convenience function that calls load_config() and caches the result.
+    """
+    global _config_cache
+    if _config_cache is None:
+        _config_cache = load_config()
+    return _config_cache
+
 def load_config(settings_path: str = "config/settings.yaml", secrets_path: str = "config/secrets.yaml") -> dict:
     """
     Load settings.yaml and merge with secrets.yaml if it exists.

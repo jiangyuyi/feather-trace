@@ -191,3 +191,95 @@
 赞比亚
 津巴布韦
 南极
+# 常用英文国家名（兼容英文路径）
+Thailand
+Myanmar
+Burma
+Vietnam
+Laos
+Cambodia
+Malaysia
+Singapore
+Indonesia
+Philippines
+Bangladesh
+Nepal
+Bhutan
+India
+Pakistan
+Sri Lanka
+Maldives
+Turkey
+Egypt
+Kenya
+Tanzania
+Uganda
+South Africa
+Namibia
+Botswana
+Zimbabwe
+Zambia
+Australia
+New Zealand
+Papua New Guinea
+Fiji
+Canada
+USA
+United States
+Mexico
+Brazil
+Argentina
+Chile
+Colombia
+Peru
+Ecuador
+Costa Rica
+Panama
+Cuba
+Jamaica
+Haiti
+Dominican Republic
+Russia
+Mongolia
+Kazakhstan
+Uzbekistan
+Turkmenistan
+Tajikistan
+Kyrgyzstan
+Georgia
+Armenia
+Azerbaijan
+Ukraine
+Belarus
+Poland
+Czech
+Germany
+France
+Spain
+Portugal
+Italy
+Greece
+UK
+United Kingdom
+Britain
+England
+Ireland
+Scotland
+Wales
+Netherlands
+Belgium
+Switzerland
+Austria
+Hungary
+Romania
+Bulgaria
+Serbia
+Croatia
+Slovenia
+Slovakia
+Norway
+Sweden
+Finland
+Denmark
+Iceland
+
