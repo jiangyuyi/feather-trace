@@ -380,11 +380,24 @@ function Install-ExifTool {
     if (Test-Command "winget") {
         winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            # 验证安装
-            Start-Sleep -Seconds 2
-            if (Test-Command "exiftool") {
-                Log-Success "ExifTool installed"
+            Log-Success "ExifTool installation initiated"
+            Log-Info "Adding to PATH..."
+            # 手动添加 ExifTool 到 PATH（winget 安装的路径）
+            $exiftoolPath = "C:\Program Files\ExifTool"
+            if (Test-Path "$exiftoolPath\exiftool.exe") {
+                $env:PATH = "$exiftoolPath;$env:PATH"
+                Log-Success "ExifTool added to PATH: $exiftoolPath"
                 return $true
+            }
+            # 也尝试 WindowsApps 路径
+            $windowsApps = Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "*ExifTool*" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($windowsApps) {
+                $binPath = Join-Path $windowsApps.FullName "ExifTool"
+                if (Test-Path "$binPath\exiftool.exe") {
+                    $env:PATH = "$binPath;$env:PATH"
+                    Log-Success "ExifTool added to PATH: $binPath"
+                    return $true
+                }
             }
         }
     }
