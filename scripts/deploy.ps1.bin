@@ -377,39 +377,90 @@ function Install-Python {
 
 function Install-ExifTool {
     Log-Step "Installing ExifTool..."
+
+    # 使用 winget 安装
     if (Test-Command "winget") {
-        winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        Log-Info "Installing via winget (OliverBetz.ExifTool)..."
+        $installResult = winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
+
         if ($LASTEXITCODE -eq 0) {
-            Log-Success "ExifTool installation initiated"
-            Log-Info "Adding to PATH..."
-            # 手动添加 ExifTool 到 PATH（winget 安装的路径）
-            $exiftoolPath = "C:\Program Files\ExifTool"
-            if (Test-Path "$exiftoolPath\exiftool.exe") {
-                $env:PATH = "$exiftoolPath;$env:PATH"
-                Log-Success "ExifTool added to PATH: $exiftoolPath"
+            Log-Success "Winget installation completed"
+            Log-Info "Refreshing PATH..."
+
+            # 刷新当前进程的 PATH
+            $env:PATH = [Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [Environment]::GetEnvironmentVariable("PATH", "User")
+
+            # 等待安装完成
+            Start-Sleep -Seconds 3
+
+            # 尝试找到 exiftool.exe
+            $exiftoolPaths = @(
+                "C:\Program Files\ExifTool\exiftool.exe",
+                "C:\Program Files (x86)\ExifTool\exiftool.exe",
+                "$env:LOCALAPPDATA\Microsoft\WindowsApps\exiftool.exe"
+            )
+
+            $foundPath = $null
+            foreach ($path in $exiftoolPaths) {
+                if (Test-Path $path) {
+                    $foundPath = $path
+                    break
+                }
+            }
+
+            # 如果没找到，尝试用 where 命令查找
+            if (-not $foundPath) {
+                try {
+                    $whereResult = where exiftool 2>$null
+                    if ($whereResult) {
+                        $foundPath = $whereResult.Trim()
+                    }
+                } catch { }
+            }
+
+            if ($foundPath) {
+                $dir = Split-Path -Path $foundPath -Parent
+                $env:PATH = "$dir;$env:PATH"
+                Log-Success "ExifTool found: $foundPath"
+                Log-Success "ExifTool installed and configured!"
                 return $true
             }
-            # 也尝试 WindowsApps 路径
-            $windowsApps = Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "*ExifTool*" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($windowsApps) {
-                $binPath = Join-Path $windowsApps.FullName "ExifTool"
-                if (Test-Path "$binPath\exiftool.exe") {
-                    $env:PATH = "$binPath;$env:PATH"
-                    Log-Success "ExifTool added to PATH: $binPath"
-                    return $true
-                }
+            else {
+                Log-Warn "ExifTool installed but location not found"
+                Log-Info "You may need to restart terminal and run 'exiftool -ver' to verify"
+            }
+        }
+        else {
+            Log-Warn "Winget install failed: $installResult"
+        }
+    }
+
+    # 尝试 scoop
+    if (Test-Command "scoop") {
+        Log-Info "Installing via scoop..."
+        $null = scoop install exiftool 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $scoopPath = "$env:SCOOP\apps\exiftool\current"
+            if (Test-Path "$scoopPath\exiftool.exe") {
+                $env:PATH = "$scoopPath;$env:PATH"
+                Log-Success "ExifTool installed via scoop"
+                return $true
             }
         }
     }
-    if (Test-Command "scoop") {
-        scoop install exiftool 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Log-Success "ExifTool installed"; return $true }
-    }
+
+    # 尝试 choco
     if (Test-Command "choco") {
-        choco install exiftool -y 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Log-Success "ExifTool installed"; return $true }
+        Log-Info "Installing via choco..."
+        $null = choco install exiftool -y 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Log-Success "ExifTool installed via choco"
+            return $true
+        }
     }
-    Log-Error "Cannot install ExifTool automatically. Download: https://exiftool.org/"
+
+    Log-Error "Cannot install ExifTool automatically."
+    Log-Info "Please download manually from: https://exiftool.org/"
     return $false
 }
 
