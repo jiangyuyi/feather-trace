@@ -501,20 +501,36 @@ function Get-Project {
         }
     }
 
-    # 检查是否有项目文件
+    # 检查是否有项目文件（必须有 src/ 目录和 requirements.txt）
+    $hasSrc = Test-Path "$PROJECT_ROOT\src"
+    $hasConfig = Test-Path "$PROJECT_ROOT\config"
+    $hasRequirements = Test-Path "$PROJECT_ROOT\requirements.txt"
+
+    if ($hasSrc -and $hasConfig -and $hasRequirements) {
+        Log-Success "Project files found"
+        return $true
+    }
+
+    # 如果有 settings.yaml 也算有项目
     if (Test-Path "$PROJECT_ROOT\settings.yaml") {
         Log-Success "Project files found"
         return $true
     }
 
-    # 检查目录是否非空（排除脚本文件）
+    # 目录非空但没有项目文件，提示用户
     $items = Get-ChildItem -Path $PROJECT_ROOT -Force | Where-Object {
         $_.Name -ne ".git" -and $_.Name -ne "deploy.ps1" -and
-        $_.Name -ne "deploy.sh"
+        $_.Name -ne "deploy.sh" -and $_.Name -ne "deploy.ps1.bin"
     }
     if ($items) {
-        Log-Warn "Directory not empty, using existing files"
-        return $true
+        Log-Warn "Directory not empty but no project files detected"
+        Log-Info "Files found: $($items.Count)"
+        if (-not (Read-YesNo "Clear directory and clone project?")) {
+            Log-Error "Aborted: Project files required"
+            exit 1
+        }
+        # 清理目录
+        $items | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 优先从 Gitee 克隆（国内访问快）
