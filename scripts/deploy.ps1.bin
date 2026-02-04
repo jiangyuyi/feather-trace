@@ -588,11 +588,18 @@ function Get-Project {
     else {
         # Clone 失败，恢复用户文件
         Log-Error "Clone failed!"
+        Log-Error "Details: $lastError"
+
+        # 显示常见解决方案
+        Write-Host ""
+        Write-Host "  Possible solutions:" -ForegroundColor Yellow
+        Write-Host "    1. Check internet connection" -ForegroundColor Gray
+        Write-Host "    2. Install Git: https://git-scm.com/download/win" -ForegroundColor Gray
+        Write-Host "    3. Or manually clone the repository to this folder" -ForegroundColor Gray
+        Write-Host ""
+
         if ($backupDir -and (Test-Path $backupDir)) {
-            Log-Info "Restoring your files..."
-            Get-ChildItem -Path $backupDir -Force | Copy-Item -Destination $PROJECT_ROOT -Recurse -Force
-            Remove-Item -Path $backupDir -Recurse -ErrorAction SilentlyContinue
-            Log-Success "Your files restored from: $backupDir"
+            Log-Info "Your files are backed up at: $backupDir"
         }
         return $false
     }
