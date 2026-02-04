@@ -538,19 +538,29 @@ function Get-Project {
 
     # 优先从 Gitee 克隆
     $cloneSuccess = $false
+    $lastError = ""
+
     Log-Info "Cloning from Gitee..."
-    $null = git clone --depth 1 $GITEE_MIRROR $tempDir 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    $gitOutput = git clone --depth 1 $GITEE_MIRROR $tempDir 2>&1
+    $lastError = $gitOutput | Out-String
+    if ($LASTEXITCODE -eq 0 -and (Test-Path "$tempDir\src")) {
         # 自动改回 GitHub
         git -C $tempDir remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
         $cloneSuccess = $true
+        Log-Success "Cloned from Gitee"
     }
     else {
         # 尝试 GitHub
+        Log-Warn "Gitee clone failed: $lastError"
         Log-Info "Trying GitHub..."
-        $null = git clone --depth 1 $GITHUB_ORIGIN $tempDir 2>&1
-        if ($LASTEXITCODE -eq 0) {
+        $gitOutput = git clone --depth 1 $GITHUB_ORIGIN $tempDir 2>&1
+        $lastError = $gitOutput | Out-String
+        if ($LASTEXITCODE -eq 0 -and (Test-Path "$tempDir\src")) {
             $cloneSuccess = $true
+            Log-Success "Cloned from GitHub"
+        }
+        else {
+            Log-Warn "GitHub clone failed: $lastError"
         }
     }
 
