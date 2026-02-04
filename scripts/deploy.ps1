@@ -16,7 +16,7 @@ try {
     # 如果设置失败，脚本仍可通过右键运行方式执行
 }
 
-$PROJECT_ROOT = Split-Path -Parent $PSScriptRoot
+$PROJECT_ROOT = $PSScriptRoot
 $GITEE_MIRROR = "https://gitee.com/jiangyuyi/feather-trace.git"
 $GITHUB_ORIGIN = "https://github.com/jiangyuyi/feather-trace.git"
 $PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
