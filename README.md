@@ -5,6 +5,8 @@
 
 FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
 
+本项目是我个人的第一个从零开始完全使用Vibe Coding的项目，使用了Gemini CLI 、Claude Code with MiniMax2.1/GLM4.7，作为一个观鸟爱好者，图片库的识别和整理一直是我的一大痛点，这个项目也算是圆了几年前的一个小梦想。
+
 本项目支持**本地 GPU/CPU 识别**和**云平台 API 识别**两种模式，支持分离部署架构。
 
 [查看更新日志](docs/CHANGELOG_v1.6_zh.md) | [架构文档](docs/ARCHITECTURE.md) | [云端识别方案](docs/云端识别与分离部署方案.md)
@@ -55,6 +57,32 @@ FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。�
 ---
 
 ## 🚀 部署指南
+
+### ⚡ 一行命令快速部署
+
+#### Windows 用户
+
+```powershell
+# 国内用户（Gitee，无需梯子）：
+Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/feather-trace/raw/master/scripts/deploy.ps1" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
+
+# 海外用户：
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/feather-trace/master/scripts/deploy.ps1" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
+```
+
+> **说明**: Windows 默认禁止运行 PowerShell 脚本。上述命令会自动设置执行策略并运行一键部署。
+
+#### Linux / macOS / WSL 用户
+
+```bash
+# 国内用户（Gitee，无需梯子）：
+curl -fsSL https://gitee.com/jiangyuyi/feather-trace/raw/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
+
+# 海外用户：
+curl -fsSL https://raw.githubusercontent.com/jiangyuyi/feather-trace/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
+```
+
+> **说明**: Gitee 为国内镜像站，下载速度更快且无需翻墙工具；GitHub 为官方仓库，版本更新更及时。
 
 ### ⚡ 一键部署脚本 (推荐)
 

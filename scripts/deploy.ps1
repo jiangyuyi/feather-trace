@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 #===============================================================================
 # FeatherTrace Windows Deployment Script
 #===============================================================================
@@ -136,9 +136,9 @@ function Test-GPU {
 function Test-CUDA {
     <#
     .SYNOPSIS
-        检测 CUDA 和 cuDNN 是否已安装
+        Check if CUDA and cuDNN are installed
     .OUTPUTS
-        返回 hashtable，包含 cuda_version, cudnn_version, is_available
+        Returns hashtable with cuda_version, cudnn_version, is_available
     #>
     $result = @{
         cuda_version = $null
@@ -200,7 +200,7 @@ function Test-CUDA {
 function Install-CUDA {
     <#
     .SYNOPSIS
-        提供 CUDA 安装指引
+        Provide CUDA installation guidance
     #>
     param([string]$Device)
 
@@ -255,7 +255,7 @@ function Install-CUDA {
 function Install-CUDAAuto {
     <#
     .SYNOPSIS
-        自动下载并安装 CUDA
+        Auto-download and install CUDA
     #>
     Log-Step "Attempting automatic CUDA installation..."
 
@@ -291,7 +291,7 @@ function Install-CUDAAuto {
 function Show-CudaDownloadLinks {
     <#
     .SYNOPSIS
-        显示 CUDA 下载链接
+        Show CUDA download links
     #>
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
@@ -327,7 +327,7 @@ function Show-CudaDownloadLinks {
 function Get-CudaInfo {
     <#
     .SYNOPSIS
-        获取 CUDA 状态信息字符串
+        Get CUDA status info string
     #>
     $status = Test-CUDA
     if ($status.is_available) {
@@ -429,7 +429,7 @@ function Get-Project {
 
         Log-Info "Updating project..."
         $pullResult = git -C $PROJECT_ROOT pull origin master 2>&1 | Out-String
-        
+
         # 如果之前是 GitHub，操作完改回去
         if ($isGithub) {
             Log-Info "Restoring remote to GitHub..."
@@ -467,11 +467,11 @@ function Get-Project {
     $null = git clone --depth 1 $GITEE_MIRROR $PROJECT_ROOT 2>&1
     if ($LASTEXITCODE -eq 0 -or (Test-Path "$PROJECT_ROOT\settings.yaml")) {
         Log-Success "Cloned from Gitee"
-        
+
         # 自动改回 GitHub
         Log-Info "Setting remote to GitHub..."
         git -C $PROJECT_ROOT remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
-        
+
         return $true
     }
 
@@ -799,7 +799,7 @@ function Invoke-Main {
                 Write-Host ""
                 Write-Host "  Format: Year/yyyymmdd_Location/*.jpg" -ForegroundColor Gray
                 Write-Host ""
-                Write-Host "  GitHub:/jiangyuyi/feather https://github.com-trace" -ForegroundColor Gray
+                Write-Host "  GitHub: https://github.com/jiangyuyi/feather-trace" -ForegroundColor Gray
                 Write-Host ""
                 Pause-Host
             }
