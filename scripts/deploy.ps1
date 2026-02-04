@@ -517,45 +517,75 @@ function Get-Project {
         return $true
     }
 
-    # 目录非空但没有项目文件，提示用户
-    $items = Get-ChildItem -Path $PROJECT_ROOT -Force | Where-Object {
+    # 收集用户文件（排除脚本文件）
+    $userFiles = Get-ChildItem -Path $PROJECT_ROOT -Force | Where-Object {
         $_.Name -ne ".git" -and $_.Name -ne "deploy.ps1" -and
         $_.Name -ne "deploy.sh" -and $_.Name -ne "deploy.ps1.bin"
     }
-    if ($items) {
-        Log-Warn "Directory not empty but no project files detected"
-        Log-Info "Files found: $($items.Count)"
-        if (-not (Read-YesNo "Clear directory and clone project?")) {
-            Log-Error "Aborted: Project files required"
-            exit 1
-        }
-        # 清理目录
-        $items | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 如果目录非空，先备份用户文件
+    $backupDir = $null
+    if ($userFiles) {
+        Log-Warn "Found existing files but no project detected"
+        $backupDir = Join-Path $env:TEMP "feather_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Log-Info "Backing up your files to: $backupDir"
+        $userFiles | Copy-Item -Destination $backupDir -Recurse -Force
+        Log-Info "Backup complete"
     }
 
-    # 优先从 Gitee 克隆（国内访问快）
+    # 使用临时目录 clone，避免直接在目标目录操作
+    $tempDir = Join-Path $env:TEMP "feather_clone_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+
+    # 优先从 Gitee 克隆
+    $cloneSuccess = $false
     Log-Info "Cloning from Gitee..."
-    $null = git clone --depth 1 $GITEE_MIRROR $PROJECT_ROOT 2>&1
-    if ($LASTEXITCODE -eq 0 -or (Test-Path "$PROJECT_ROOT\settings.yaml")) {
-        Log-Success "Cloned from Gitee"
-
-        # 自动改回 GitHub
-        Log-Info "Setting remote to GitHub..."
-        git -C $PROJECT_ROOT remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
-
-        return $true
-    }
-
-    # Gitee 失败则尝试 GitHub
-    Log-Info "Trying GitHub..."
-    $null = git clone --depth 1 $GITHUB_ORIGIN $PROJECT_ROOT 2>&1
+    $null = git clone --depth 1 $GITEE_MIRROR $tempDir 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Log-Success "Cloned from GitHub"
-        return $true
+        # 自动改回 GitHub
+        git -C $tempDir remote set-url origin $GITHUB_ORIGIN 2>&1 | Out-Null
+        $cloneSuccess = $true
+    }
+    else {
+        # 尝试 GitHub
+        Log-Info "Trying GitHub..."
+        $null = git clone --depth 1 $GITHUB_ORIGIN $tempDir 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $cloneSuccess = $true
+        }
     }
 
-    Log-Error "Clone failed"
-    return $false
+    if ($cloneSuccess) {
+        Log-Info "Moving files to project directory..."
+
+        # 如果目标目录有文件，先清空（保留脚本文件）
+        Get-ChildItem -Path $PROJECT_ROOT -Force | Where-Object {
+            $_.Name -ne ".git" -and $_.Name -ne "deploy.ps1" -and
+            $_.Name -ne "deploy.sh" -and $_.Name -ne "deploy.ps1.bin"
+        } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+        # 移动新文件
+        Get-ChildItem -Path $tempDir -Force | Move-Item -Destination $PROJECT_ROOT -ErrorAction SilentlyContinue
+
+        # 清理临时目录
+        Remove-Item -Path $tempDir -Recurse -ErrorAction SilentlyContinue
+
+        Log-Success "Project cloned successfully"
+        if ($backupDir) {
+            Log-Info "Your files are backed up at: $backupDir"
+        }
+        return $true
+    }
+    else {
+        # Clone 失败，恢复用户文件
+        Log-Error "Clone failed!"
+        if ($backupDir -and (Test-Path $backupDir)) {
+            Log-Info "Restoring your files..."
+            Get-ChildItem -Path $backupDir -Force | Copy-Item -Destination $PROJECT_ROOT -Recurse -Force
+            Remove-Item -Path $backupDir -Recurse -ErrorAction SilentlyContinue
+            Log-Success "Your files restored from: $backupDir"
+        }
+        return $false
+    }
 }
 
 function Install-PythonDependencies {
