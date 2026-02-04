@@ -378,8 +378,15 @@ function Install-Python {
 function Install-ExifTool {
     Log-Step "Installing ExifTool..."
     if (Test-Command "winget") {
-        winget install --id PhilHarvey.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Log-Success "ExifTool installed"; return $true }
+        winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            # 验证安装
+            Start-Sleep -Seconds 2
+            if (Test-Command "exiftool") {
+                Log-Success "ExifTool installed"
+                return $true
+            }
+        }
     }
     if (Test-Command "scoop") {
         scoop install exiftool 2>&1 | Out-Null
@@ -396,18 +403,53 @@ function Install-ExifTool {
 function Install-AllDependencies {
     Log-Step "Installing system dependencies..."
     $failed = $false
+
+    # Git
     if (-not (Test-Git)) {
-        if (Read-YesNo "Install Git?") { if (-not (Install-Git)) { $failed = $true } } else { $failed = $true }
+        if (Read-YesNo "Install Git?") {
+            if (-not (Install-Git)) {
+                Log-Error "Git installation failed"
+                exit 1
+            }
+        } else {
+            Log-Error "Git is required"
+            exit 1
+        }
     }
+
+    # Python
     if (-not (Test-Python)) {
-        if (Read-YesNo "Install Python?") { if (-not (Install-Python)) { $failed = $true } } else { $failed = $true }
+        if (Read-YesNo "Install Python?") {
+            if (-not (Install-Python)) {
+                Log-Error "Python installation failed"
+                exit 1
+            }
+            Log-Warn "Python installed. Please RESTART this terminal and run the script again."
+            Log-Info "Or press Enter to exit and manually restart..."
+            Read-Host
+            exit 1
+        } else {
+            Log-Error "Python is required"
+            exit 1
+        }
     }
+
+    # ExifTool
     if (-not (Test-ExifTool)) {
-        if (Read-YesNo "Install ExifTool?") { if (-not (Install-ExifTool)) { $failed = $true } }
+        if (Read-YesNo "Install ExifTool?") {
+            if (-not (Install-ExifTool)) {
+                Log-Error "ExifTool installation failed. Please install manually."
+                Log-Info "Download: https://exiftool.org/"
+                exit 1
+            }
+        } else {
+            Log-Error "ExifTool is required"
+            exit 1
+        }
     }
-    if (-not $failed) { Log-Success "All dependencies installed"; return $true }
-    Log-Warn "Some dependencies failed to install"
-    return $false
+
+    Log-Success "All dependencies installed"
+    return $true
 }
 
 function Get-Project {
