@@ -372,6 +372,89 @@ show_cuda_download_links() {
     fi
 }
 
+install_cuda_auto() {
+    log_step "Auto-installing CUDA Toolkit 12.1..."
+
+    # 检查是否是 root 用户
+    if [ "$EUID" -ne 0 ]; then
+        log_warn "CUDA installation requires root privileges"
+        log_info "Please run: sudo bash $0 cuda"
+        return 1
+    fi
+
+    # CUDA 12.1 下载链接（Linux x86_64）
+    local cuda_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/cuda-ubuntu2204.pin"
+    local cuda_installer="cuda_12.1.1_530.30.02_linux.run"
+
+    # 检测系统版本
+    local os_version=""
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        os_version="$ID"
+    fi
+
+    # 选择合适的下载链接
+    local download_url=""
+    case "$os_version" in
+        ubuntu)
+            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+            ;;
+        debian)
+            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/debian12/x86_64/${cuda_installer}"
+            ;;
+        centos|rhel|fedora)
+            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/rhel9/x86_64/${cuda_installer}"
+            ;;
+        *)
+            # 默认使用 Ubuntu 链接
+            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+            ;;
+    esac
+
+    log_info "Downloading CUDA Toolkit 12.1..."
+    log_info "URL: $download_url"
+
+    # 下载 CUDA
+    local installer_path="/tmp/${cuda_installer}"
+    if curl -L -o "$installer_path" "$download_url"; then
+        log_success "CUDA downloaded"
+    else
+        log_error "Failed to download CUDA"
+        return 1
+    fi
+
+    # 安装 CUDA（静默模式）
+    log_info "Installing CUDA (this may take several minutes)..."
+    chmod +x "$installer_path"
+
+    # 静默安装，只安装 toolkit
+    $installer_path --silent --toolkit --override 2>&1 | while IFS= read -r line; do
+        log_info "$line"
+    done
+
+    if [ $? -eq 0 ]; then
+        log_success "CUDA installed successfully"
+
+        # 添加到 PATH
+        if [ -d "/usr/local/cuda-12.1/bin" ]; then
+            export PATH="/usr/local/cuda-12.1/bin:$PATH"
+            echo 'export PATH="/usr/local/cuda-12.1/bin:$PATH"' >> /root/.bashrc
+            log_info "Added CUDA to PATH in /root/.bashrc"
+        fi
+
+        if [ -d "/usr/local/cuda/bin" ]; then
+            export PATH="/usr/local/cuda/bin:$PATH"
+            echo 'export PATH="/usr/local/cuda/bin:$PATH"' >> /root/.bashrc
+        fi
+
+        log_success "Please restart terminal or run: source /root/.bashrc"
+        return 0
+    else
+        log_error "CUDA installation failed"
+        return 1
+    fi
+}
+
 install_cuda() {
     log_step "Checking CUDA environment..."
 
@@ -394,8 +477,9 @@ install_cuda() {
     echo -e "  GPU detected but CUDA/cuDNN not installed."
     echo -e "  WingScribe requires CUDA for GPU acceleration."
     echo ""
-    echo -e "  ${GREEN}Option 1:${NC} Show download links"
-    echo -e "  ${YELLOW}Option 2:${NC} Continue with CPU (slower)"
+    echo -e "  ${GREEN}Option 1:${NC} Auto-install CUDA 12.1 (requires root)"
+    echo -e "  ${GREEN}Option 2:${NC} Show download links"
+    echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU (slower)"
     echo ""
 
     local choice=$(ask_input "Select option" "1")
@@ -403,9 +487,12 @@ install_cuda() {
 
     case "$choice" in
         1)
-            show_cuda_download_links
+            install_cuda_auto
             ;;
         2)
+            show_cuda_download_links
+            ;;
+        3)
             log_warn "Continuing with CPU mode"
             return 1
             ;;
