@@ -387,68 +387,85 @@ install_cuda_auto() {
         return 1
     fi
 
-    # CUDA 12.1 下载链接（Linux x86_64）
-    local cuda_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/cuda-ubuntu2204.pin"
-    local cuda_installer="cuda_12.1.1_530.30.02_linux.run"
-
-    # 检测系统版本
+    # 检测系统版本和架构
     local os_version=""
+    local os_arch=$(uname -m)
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         os_version="$ID"
     fi
 
     # 选择合适的下载链接
+    # CUDA 12.1 runfile (local) 下载地址
+    local cuda_installer=""
     local download_url=""
+
+    # 根据系统和架构选择正确的安装包
     case "$os_version" in
         ubuntu)
-            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+            case "$os_arch" in
+                x86_64)
+                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
+                    ;;
+                aarch64|arm64)
+                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.aarch64.run"
+                    ;;
+            esac
             ;;
         debian)
-            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/debian12/x86_64/${cuda_installer}"
+            case "$os_arch" in
+                x86_64)
+                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
+                    ;;
+            esac
             ;;
         centos|rhel|fedora)
-            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/rhel9/x86_64/${cuda_installer}"
+            case "$os_arch" in
+                x86_64)
+                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
+                    ;;
+                aarch64|arm64)
+                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.aarch64.run"
+                    ;;
+            esac
             ;;
         *)
-            # 默认使用 Ubuntu 链接
-            download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+            # 默认使用 x86_64 Ubuntu 链接
+            cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
             ;;
     esac
 
+    download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+
+    log_info "System: $os_version ($os_arch)"
     log_info "Downloading CUDA Toolkit 12.1..."
     log_info "URL: $download_url"
 
     # 下载 CUDA
     local installer_path="/tmp/${cuda_installer}"
-    if curl -L -o "$installer_path" "$download_url"; then
-        log_success "CUDA downloaded"
-    else
+    if ! curl -L -o "$installer_path" "$download_url" 2>&1 | grep -v "^  %"; then
         log_error "Failed to download CUDA"
+        log_info "Please download manually from:"
+        log_info "  https://developer.nvidia.com/cuda-downloads"
         return 1
     fi
+    log_success "CUDA downloaded"
 
     # 安装 CUDA（静默模式）
     log_info "Installing CUDA (this may take several minutes)..."
     chmod +x "$installer_path"
 
     # 静默安装，只安装 toolkit
-    $installer_path --silent --toolkit --override 2>&1 | while IFS= read -r line; do
-        log_info "$line"
-    done
-
-    if [ $? -eq 0 ]; then
+    if $installer_path --silent --toolkit --override 2>&1 | grep -v "^  %"; then
         log_success "CUDA installed successfully"
 
         # 添加到 PATH
         if [ -d "/usr/local/cuda-12.1/bin" ]; then
-            export PATH="/usr/local/cuda-12.1/bin:$PATH"
             echo 'export PATH="/usr/local/cuda-12.1/bin:$PATH"' >> /root/.bashrc
             log_info "Added CUDA to PATH in /root/.bashrc"
         fi
 
         if [ -d "/usr/local/cuda/bin" ]; then
-            export PATH="/usr/local/cuda/bin:$PATH"
             echo 'export PATH="/usr/local/cuda/bin:$PATH"' >> /root/.bashrc
         fi
 
@@ -463,28 +480,78 @@ install_cuda_auto() {
 install_cuda() {
     log_step "Checking CUDA environment..."
 
-    test_gpu
-    if [ "$HAS_GPU" = "false" ]; then
-        log_warn "No NVIDIA GPU detected"
-        return 1
+    # 检测是否以 sudo 运行
+    local is_sudo=false
+    if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        is_sudo=true
+        log_warn "Running with sudo - GPU detection may fail"
+        echo ""
+        echo -e "${YELLOW}WSL2/Sudo Warning:${NC}"
+        echo -e "  GPU detection may not work under sudo."
+        echo -e "  WSL2 GPU access requires running without sudo."
+        echo ""
+        echo -e "  ${GREEN}Option 1:${NC} Skip GPU detection, proceed to install CUDA"
+        echo -e "  ${GREEN}Option 2:${NC} Run without sudo (recommended for GPU)"
+        echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
+        echo ""
+
+        local sudo_choice=$(ask_input "Select option" "1")
+        echo ""
+
+        case "$sudo_choice" in
+            1)
+                log_info "Proceeding with CUDA installation..."
+                ;;
+            2)
+                log_warn "Please run without sudo:"
+                log_info "  bash $0 cuda"
+                return 1
+                ;;
+            3)
+                log_warn "Continuing with CPU mode"
+                return 1
+                ;;
+            *)
+                log_error "Invalid choice"
+                return 1
+                ;;
+        esac
     fi
 
-    if test_cuda; then
-        log_success "CUDA environment ready"
-        return 0
+    # 普通用户模式，检测 GPU
+    if [ "$is_sudo" = false ]; then
+        test_gpu
+        if [ "$HAS_GPU" = "false" ]; then
+            log_warn "No NVIDIA GPU detected"
+            echo ""
+            echo -e "  ${GREEN}Option 1:${NC} Install CUDA anyway"
+            echo -e "  ${YELLOW}Option 2:${NC} Continue with CPU mode"
+            echo ""
+
+            local gpu_choice=$(ask_input "Select option" "2")
+            echo ""
+
+            case "$gpu_choice" in
+                1) log_info "Proceeding with CUDA installation..." ;;
+                2) log_warn "Continuing with CPU mode"; return 1 ;;
+                *) log_error "Invalid choice"; return 1 ;;
+            esac
+        fi
+
+        if test_cuda; then
+            log_success "CUDA environment ready"
+            return 0
+        fi
     fi
 
     echo ""
     echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}  ${WHITE}CUDA Installation Required${NC}                   ${CYAN}"
+    echo -e "${CYAN}  ${WHITE}CUDA Installation${NC}                              ${CYAN}"
     echo -e "${CYAN}========================================${NC}"
     echo ""
-    echo -e "  GPU detected but CUDA/cuDNN not installed."
-    echo -e "  WingScribe requires CUDA for GPU acceleration."
-    echo ""
-    echo -e "  ${GREEN}Option 1:${NC} Auto-install CUDA 12.1 (requires root)"
+    echo -e "  ${GREEN}Option 1:${NC} Auto-install CUDA 12.1"
     echo -e "  ${GREEN}Option 2:${NC} Show download links"
-    echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU (slower)"
+    echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
     echo ""
 
     local choice=$(ask_input "Select option" "1")
