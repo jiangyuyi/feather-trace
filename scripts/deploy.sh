@@ -248,19 +248,18 @@ get_cuda_info() {
 
 install_git() {
     log_step "Installing Git..."
-    if is_windows && command_exists winget; then
-        winget install --id Git.Git -e --source winget 2>&1 | grep -E "(installed|error)" || true
-    elif is_macos && command_exists brew; then
+    if is_macos && command_exists brew; then
         brew install git
     elif command_exists apt-get; then
-        sudo apt-get update && sudo apt-get install -y git
+        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
+        sudo apt-get install -y git
     elif command_exists yum; then
         sudo yum install -y git
     elif command_exists dnf; then
         sudo dnf install -y git
     else
         log_error "Cannot install Git automatically"
-        log_info "Download: https://git-scm.com/downloads"
+        log_info "Download: https://npm.taobao.org/mirrors/git-for-windows"
         return 1
     fi
     test_git
@@ -268,21 +267,29 @@ install_git() {
 
 install_python() {
     log_step "Installing Python 3.11..."
-    if is_windows && command_exists winget; then
-        winget install --id Python.Python.3.11 -e --source winget 2>&1 | grep -E "(installed|error)" || true
-    elif is_macos && command_exists brew; then
+
+    if is_macos && command_exists brew; then
+        log_info "Using brew..."
         brew install python@3.11
     elif command_exists apt-get; then
-        sudo apt-get update && sudo apt-get install -y python3.11 python3-pip python3-venv
+        # 先安装 python3-venv（解决虚拟环境创建问题）
+        log_info "Installing Python and python3-venv..."
+        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
+        sudo apt-get install -y python3.11 python3.11-venv python3-pip
     elif command_exists yum; then
-        sudo yum install -y python3.11
+        log_info "Using yum..."
+        sudo yum install -y python3
     elif command_exists dnf; then
-        sudo dnf install -y python3.11
+        log_info "Using dnf..."
+        sudo dnf install -y python3
     else
         log_error "Cannot install Python automatically"
-        log_info "Download: https://www.python.org/downloads/"
+        log_info "Download: https://registry.npmmirror.com/binaries/python"
         return 1
     fi
+
+    # 验证安装
+    test_python
 }
 
 install_exiftool() {
@@ -290,14 +297,15 @@ install_exiftool() {
     if is_macos && command_exists brew; then
         brew install exiftool
     elif command_exists apt-get; then
-        sudo apt-get update && sudo apt-get install -y exiftool
+        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
+        sudo apt-get install -y exiftool
     elif command_exists yum; then
         sudo yum install -y perl-Image-ExifTool
     elif command_exists dnf; then
         sudo dnf install -y perl-Image-ExifTool
     else
         log_error "Cannot install ExifTool automatically"
-        log_info "Download: https://exiftool.org/"
+        log_info "Download: https://exiftool.org/ or https://gitee.com/jiangyuyi/wingscribe/releases"
         return 1
     fi
     test_exiftool
@@ -312,17 +320,54 @@ install_python_deps() {
     fi
 
     local venv_path="${PROJECT_ROOT}/venv"
-    local pip_cmd="$PYTHON_CMD -m pip"
+    local pip_cmd=""
 
-    # 创建虚拟环境
+    # 检查是否需要安装 python3-venv（Debian/Ubuntu 问题）
+    check_venv_support() {
+        if ! command_exists python3.11; then
+            return 1
+        fi
+        # 尝试检查 venv 模块是否存在
+        python3.11 -c "import venv" 2>/dev/null
+        return $?
+    }
+
+    install_venv_if_needed() {
+        if ! check_venv_support; then
+            log_info "Installing python3-venv..."
+            if command_exists apt-get; then
+                sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
+                sudo apt-get install -y python3.11-venv
+            elif command_exists yum; then
+                sudo yum install -y python3-venv
+            elif command_exists dnf; then
+                sudo dnf install -y python3-venv
+            fi
+        fi
+    }
+
+    # 创建虚拟环境前确保 venv 支持
     if [ ! -d "$venv_path" ]; then
         log_info "Creating virtual environment..."
-        $PYTHON_CMD -m venv "$venv_path"
+        install_venv_if_needed
+
+        # 使用 python3.11 确保版本正确
+        if command_exists python3.11; then
+            python3.11 -m venv "$venv_path"
+        else
+            $PYTHON_CMD -m venv "$venv_path"
+        fi
+
+        if [ $? -ne 0 ]; then
+            log_error "Failed to create virtual environment"
+            log_info "Try: sudo apt-get install python3.11-venv"
+            return 1
+        fi
     fi
 
     # 确定 pip 命令
     if is_windows; then
-        pip_cmd="${venv_path}/Scripts/pip"
+        pip_cmd="${venv_path}/Scripts/pip.exe"
     else
         pip_cmd="${venv_path}/bin/pip"
     fi
@@ -331,15 +376,17 @@ install_python_deps() {
     log_info "Configuring pip mirror..."
     $pip_cmd config set global.index-url "$PIP_MIRROR" 2>/dev/null || true
 
-    # 升级 pip
+    # 升级 pip（显示进度）
     log_info "Upgrading pip..."
     $pip_cmd install --upgrade pip 2>&1 | grep -v "Requirement already" || true
 
-    # 安装依赖
+    # 安装依赖（显示进度）
     local requirements="${PROJECT_ROOT}/requirements.txt"
     if [ -f "$requirements" ]; then
-        log_info "Installing requirements..."
-        $pip_cmd install -r "$requirements" 2>&1 | grep -v "Requirement already" || true
+        log_info "Installing requirements.txt..."
+        log_info "Downloading and installing packages... (this may take several minutes)"
+
+        $pip_cmd install -r "$requirements" --progress-bar on 2>&1 | grep -v "Requirement already" || true
         log_success "Python dependencies installed"
     else
         log_warn "requirements.txt not found"
@@ -398,7 +445,7 @@ install_cuda() {
     echo -e "${CYAN}========================================${NC}"
     echo ""
     echo -e "  GPU detected but CUDA/cuDNN not installed."
-    echo -e "  FeatherTrace requires CUDA for GPU acceleration."
+    echo -e "  WingScribe requires CUDA for GPU acceleration."
     echo ""
     echo -e "  ${GREEN}Option 1:${NC} Show download links"
     echo -e "  ${YELLOW}Option 2:${NC} Continue with CPU (slower)"
@@ -578,7 +625,7 @@ invoke_config_wizard() {
     mkdir -p "$(dirname "$config_path")"
 
     cat > "$config_path" << EOF
-# FeatherTrace config
+# WingScribe config
 # Generated by deploy script
 
 paths:
@@ -624,7 +671,7 @@ EOF
     local secrets_path="${PROJECT_ROOT}/config/secrets.yaml"
     if [ ! -f "$secrets_path" ]; then
         cat > "$secrets_path" << 'EOF'
-# FeatherTrace secrets
+# WingScribe secrets
 hf_api_key: ""
 dongniao_api_key: ""
 EOF
@@ -805,7 +852,7 @@ configure_cloud() {
     # 确保 secrets.yaml 存在
     if [ ! -f "$secrets_path" ]; then
         cat > "$secrets_path" << 'EOF'
-# FeatherTrace secrets
+# WingScribe secrets
 # Cloud platform API keys
 
 # Local recognition (optional)
@@ -833,7 +880,7 @@ cloud:
 # API authentication
 api_keys:
   - name: default
-    key: ${FEATHERTRACE_API_KEY}
+    key: ${WINGSCRIBE_API_KEY}
     rate_limit: 1000/day
     quota: 10000/month
 EOF
@@ -906,7 +953,7 @@ list_cloud_platforms() {
 show_help() {
     cat << EOF
 ========================================
-  FeatherTrace Deployment
+  WingScribe Deployment
 ========================================
   AI Bird Photo Management
 ========================================
