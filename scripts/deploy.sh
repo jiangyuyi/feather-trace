@@ -3,9 +3,6 @@
 # WingScribe 一键部署脚本 - Linux/macOS/WSL
 #===============================================================================
 
-# 立即退出管道失败
-set -o pipefail
-
 # 确保在项目根目录运行
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "${SCRIPT_DIR}")" && pwd)"
@@ -14,26 +11,20 @@ PROJECT_ROOT="$(cd "$(dirname "${SCRIPT_DIR}")" && pwd)"
 GITEE_MIRROR="https://gitee.com/jiangyuyi/wingscribe.git"
 GITHUB_ORIGIN="https://github.com/jiangyuyi/wingscribe.git"
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
-HF_MIRROR="https://hf-mirror.com"
 
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
-# 日志函数
-log_info()   { printf "${GREEN}[INFO]${NC}   %s\n" "$1"; }
-log_warn()   { printf "${YELLOW}[WARN]${NC]   %s\n" "$1"; }
-log_error()  { printf "${RED}[ERROR]${NC]  %s\n" "$1" >&2; }
-log_step()   { printf "${CYAN}[STEP]${NC]   %s\n" "$1"; }
-log_success(){ printf "${GREEN}[OK]${NC]    %s\n" "$1"; }
-
+#===============================================================================
 # 工具函数
+#===============================================================================
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
@@ -98,6 +89,16 @@ ensure_directory() {
         mkdir -p "$path" 2>/dev/null
     fi
 }
+
+#===============================================================================
+# 日志函数
+#===============================================================================
+
+log_info()   { printf "${GREEN}[INFO]   ${NC}%s\n" "$1"; }
+log_warn()   { printf "${YELLOW}[WARN]   ${NC}%s\n" "$1"; }
+log_error()  { printf "${RED}[ERROR]  ${NC}%s\n" "$1" >&2; }
+log_step()   { printf "${CYAN}[STEP]   ${NC}%s\n" "$1"; }
+log_success(){ printf "${GREEN}[OK]     ${NC}%s\n" "$1"; }
 
 #===============================================================================
 # 检测函数
@@ -445,8 +446,8 @@ get_project() {
         fi
     fi
 
-    # 检查是否有项目文件（必须有 src/ 目录和 requirements.txt）
-    if [ -f "${PROJECT_ROOT}/settings.yaml" ] || [ -f "${PROJECT_ROOT}/settings.yaml" ]; then
+    # 检查是否有项目文件
+    if [ -f "${PROJECT_ROOT}/settings.yaml" ]; then
         log_success "Project files found"
         return 0
     fi
