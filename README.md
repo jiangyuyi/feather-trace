@@ -64,10 +64,10 @@ WingScribe 是一个专为鸟类摄影师打造的自动化管理流水线。它
 
 ```powershell
 # 国内用户（Gitee，无需梯子）：
-Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1
+Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.ps1" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
 
 # 海外用户：
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.ps1" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
 ```
 
 > **说明**: Windows 默认禁止运行 PowerShell 脚本。上述命令会自动设置执行策略并运行一键部署。
