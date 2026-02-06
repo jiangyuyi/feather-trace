@@ -52,23 +52,23 @@ ask_input() {
     local default="${2:-}"
     local result=""
 
-    # 检查是否是管道/非交互式环境
-    if [ ! -t 0 ]; then
-        # 非交互式环境，直接返回默认值
-        echo "$default" | tr -d '\n\r'
-        return
-    fi
-
+    # WSL2 兼容：使用 -u 0 明确从 stdin 读取
     if [ -n "$default" ]; then
-        printf "${CYAN}%s${NC} [%s]: " "$prompt" "$default"
+        printf "${CYAN}%s${NC} [%s]: " "$prompt" "$default" >&2
     else
-        printf "${CYAN}%s${NC}: " "$prompt"
+        printf "${CYAN}%s${NC}: " "$prompt" >&2
     fi
-    read -r result
 
-    # 去除首尾空白和换行符
-    result=$(echo "$result" | tr -d '[:space:]')
-    [ -z "$result" ] && result="$default"
+    # 使用 -u 0 从 stdin 读取，明确使用文件描述符
+    if IFS= read -r result < /dev/stdin; then
+        # 去除所有空白字符
+        result=$(printf '%s' "$result" | tr -d '[:space:]')
+        [ -z "$result" ] && result="$default"
+    else
+        result="$default"
+    fi
+
+    # 输出结果（追加换行）
     echo "$result"
 }
 
@@ -83,10 +83,15 @@ ask_yes_no() {
         else
             suffix="[y/N]"
         fi
-        printf "${CYAN}%s ${suffix}: " "$prompt"
-        read -r answer
-        answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-        [ -z "$answer" ] && answer="$default"
+        # 输出到 stderr，避免影响 stdin
+        printf "${CYAN}%s ${suffix}: " "$prompt" >&2
+        # 明确从 /dev/stdin 读取
+        if IFS= read -r answer < /dev/stdin; then
+            answer=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+            [ -z "$answer" ] && answer="$default"
+        else
+            answer="$default"
+        fi
         case "$answer" in
             y|yes) return 0 ;;
             n|no)  return 1 ;;
