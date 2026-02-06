@@ -484,64 +484,22 @@ install_cuda() {
     local is_sudo=false
     if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
         is_sudo=true
-        log_warn "Running with sudo - GPU detection may fail"
-        echo ""
-        echo -e "${YELLOW}WSL2/Sudo Warning:${NC}"
-        echo -e "  GPU detection may not work under sudo."
-        echo -e "  WSL2 GPU access requires running without sudo."
-        echo ""
-        echo -e "  ${GREEN}Option 1:${NC} Skip GPU detection, proceed to install CUDA"
-        echo -e "  ${GREEN}Option 2:${NC} Run without sudo (recommended for GPU)"
-        echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
-        echo ""
-
-        local sudo_choice=$(ask_input "Select option" "1")
-        echo ""
-
-        case "$sudo_choice" in
-            1)
-                log_info "Proceeding with CUDA installation..."
-                ;;
-            2)
-                log_warn "Please run without sudo:"
-                log_info "  bash $0 cuda"
-                return 1
-                ;;
-            3)
-                log_warn "Continuing with CPU mode"
-                return 1
-                ;;
-            *)
-                log_error "Invalid choice"
-                return 1
-                ;;
-        esac
     fi
 
-    # 普通用户模式，检测 GPU
+    # 先检测 GPU（WSL2 需要普通用户）
     if [ "$is_sudo" = false ]; then
         test_gpu
-        if [ "$HAS_GPU" = "false" ]; then
+        if [ "$HAS_GPU" = "true" ]; then
+            log_info "GPU detected: NVIDIA GPU"
+        else
             log_warn "No NVIDIA GPU detected"
-            echo ""
-            echo -e "  ${GREEN}Option 1:${NC} Install CUDA anyway"
-            echo -e "  ${YELLOW}Option 2:${NC} Continue with CPU mode"
-            echo ""
-
-            local gpu_choice=$(ask_input "Select option" "2")
-            echo ""
-
-            case "$gpu_choice" in
-                1) log_info "Proceeding with CUDA installation..." ;;
-                2) log_warn "Continuing with CPU mode"; return 1 ;;
-                *) log_error "Invalid choice"; return 1 ;;
-            esac
         fi
+    fi
 
-        if test_cuda; then
-            log_success "CUDA environment ready"
-            return 0
-        fi
+    # 检测 CUDA
+    if test_cuda; then
+        log_success "CUDA environment ready"
+        return 0
     fi
 
     echo ""
@@ -549,7 +507,16 @@ install_cuda() {
     echo -e "${CYAN}  ${WHITE}CUDA Installation${NC}                              ${CYAN}"
     echo -e "${CYAN}========================================${NC}"
     echo ""
-    echo -e "  ${GREEN}Option 1:${NC} Auto-install CUDA 12.1"
+
+    # 根据 sudo 状态显示不同信息
+    if [ "$HAS_GPU" = "true" ]; then
+        echo -e "  GPU detected but CUDA Toolkit not installed."
+        echo -e "  CUDA is required for GPU acceleration."
+    else
+        echo -e "  No GPU detected or CUDA not installed."
+    fi
+    echo ""
+    echo -e "  ${GREEN}Option 1:${NC} Install CUDA Toolkit 12.1"
     echo -e "  ${GREEN}Option 2:${NC} Show download links"
     echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
     echo ""
@@ -559,6 +526,17 @@ install_cuda() {
 
     case "$choice" in
         1)
+            # 检查是否需要 sudo
+            if [ "$EUID" -ne 0 ]; then
+                log_info "CUDA installation requires root privileges"
+                echo ""
+                echo -e "${YELLOW}Please run with sudo:${NC}"
+                echo "  sudo bash $0 cuda"
+                echo ""
+                log_info "Or enter your password to continue:"
+                exec sudo bash "$0" cuda
+                return 0
+            fi
             install_cuda_auto
             ;;
         2)
