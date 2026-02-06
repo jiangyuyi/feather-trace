@@ -393,9 +393,115 @@ install_cuda_auto() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         os_version="$ID"
+        # 清理版本号（如 "ubuntu" -> "ubuntu", "22.04" -> "2204"）
+        os_version="${os_version// /}"
     fi
 
-    # 选择合适的下载链接
+    # 对于 WSL2，检测是否在 WSL 环境中
+    local is_wsl=false
+    if grep -qi "microsoft" /proc/version 2>/dev/null; then
+        is_wsl=true
+        log_info "Detected WSL2 environment"
+    fi
+
+    log_info "System: $os_version ($os_arch)"
+
+    # 根据系统类型选择安装方法
+    if [ "$is_wsl" = true ]; then
+        # WSL2 环境：推荐使用 APT 安装
+        install_cuda_apt
+    else
+        # 原生 Linux：使用 runfile 安装
+        install_cuda_runfile
+    fi
+}
+
+install_cuda_apt() {
+    log_info "Installing CUDA via APT repository..."
+
+    # 检测 Ubuntu 版本并设置仓库路径
+    local ubuntu_codename=""
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        ubuntu_codename="$VERSION_CODENAME"
+    fi
+
+    if [ -z "$ubuntu_codename" ]; then
+        # 尝试从 lsb-release 获取
+        if command_exists lsb_release; then
+            ubuntu_codename=$(lsb_release --codename --short 2>/dev/null)
+        fi
+    fi
+
+    if [ -z "$ubuntu_codename" ]; then
+        log_error "Cannot determine Ubuntu codename"
+        log_info "Please run: sudo apt-get install nvidia-cuda-toolkit"
+        return 1
+    fi
+
+    log_info "Ubuntu codename: $ubuntu_codename"
+
+    # 添加 NVIDIA CUDA 仓库
+    log_info "Adding NVIDIA CUDA repository..."
+
+    # 下载并安装 CUDA 密钥环
+    local keyring_path="/usr/share/keyrings/cuda-archive-keyring.gpg"
+    local keyring_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu${ubuntu_codename}/x86_64/cuda-keyring_1.1-1_all.deb"
+
+    log_info "Downloading CUDA keyring..."
+    if ! curl -fsSL -o /tmp/cuda-keyring.deb "$keyring_url"; then
+        log_error "Failed to download CUDA keyring"
+        log_info "Trying alternative method..."
+        # 备用方案：使用 ubuntu cuda-toolkit 仓库
+        sudo apt-get install -y software-properties-common 2>/dev/null || true
+        sudo add-apt-repository -y "deb [arch=amd64] https://archive.ubuntu.com/ubuntu/ ${ubuntu_codename} multiverse" 2>/dev/null || true
+    else
+        log_success "Downloaded CUDA keyring"
+        sudo dpkg -i /tmp/cuda-keyring.deb
+        rm -f /tmp/cuda-keyring.deb
+    fi
+
+    # 更新并安装 CUDA
+    log_info "Installing CUDA toolkit..."
+    sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
+    sudo apt-get install -y cuda-toolkit-12-1 2>&1 | grep -v "^Selecting" | head -20
+
+    # 验证安装
+    if command_exists nvcc; then
+        local cuda_version=$(nvcc --version | grep "release" | awk '{print $5}')
+        log_success "CUDA $cuda_version installed successfully"
+        log_info "Add to PATH: export PATH=/usr/local/cuda/bin:\$PATH"
+        return 0
+    else
+        # 备用：尝试安装 nvidia-cuda-toolkit
+        log_warn "CUDA toolkit not found, trying alternative package..."
+        sudo apt-get install -y nvidia-cuda-toolkit 2>&1 | tail -5
+
+        if command_exists nvcc; then
+            log_success "CUDA installed via nvidia-cuda-toolkit"
+            return 0
+        fi
+    fi
+
+    log_error "CUDA installation failed"
+    log_info "Please install manually: sudo apt-get install nvidia-cuda-toolkit"
+    return 1
+}
+
+install_cuda_runfile() {
+    log_info "Installing CUDA via runfile..."
+
+    # 检测系统版本和架构
+    local os_version=""
+    local os_arch=$(uname -m)
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        os_version="$ID"
+    fi
+
+    # 根据系统确定 CUDA 版本和下载 URL
+    local cuda_version="12.1.1"
+    local cuda_build="530.30.02"
     local cuda_installer=""
     local download_url=""
 
@@ -418,59 +524,41 @@ install_cuda_auto() {
                     ;;
             esac
             ;;
-        centos|rhel|fedora)
-            case "$os_arch" in
-                x86_64)
-                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
-                    ;;
-                aarch64|arm64)
-                    cuda_installer="cuda_12.1.1_530.30.02_linux_64.aarch64.run"
-                    ;;
-            esac
-            ;;
         *)
-            # 默认使用 x86_64 Ubuntu 链接
             cuda_installer="cuda_12.1.1_530.30.02_linux_64.x86_64.run"
             ;;
     esac
 
-    download_url="https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+    # 尝试多个可能的下载 URL
+    local urls=(
+        "https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2204/x86_64/${cuda_installer}"
+        "https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2004/x86_64/${cuda_installer}"
+        "https://developer.download.nvidia.com/compute/cuda/repositories/ubuntu2404/x86_64/${cuda_installer}"
+    )
 
-    log_info "System: $os_version ($os_arch)"
-    log_info "Downloading CUDA Toolkit 12.1..."
-    log_info "URL: $download_url"
-
-    # 下载 CUDA（使用 -L 跟随重定向，-f 失败时返回错误码）
     local installer_path="/tmp/${cuda_installer}"
+    local download_success=false
 
-    # 使用 curl 下载，跟随重定向
-    local curl_output
-    curl_output=$(curl -L -f -o "$installer_path" "$download_url" 2>&1)
-    local curl_status=$?
+    for url in "${urls[@]}"; do
+        log_info "Trying: $url"
+        if curl -fsSL -o "$installer_path" "$url" 2>/dev/null; then
+            local file_size=$(stat -c%s "$installer_path" 2>/dev/null || echo "0")
+            if [ "$file_size" -gt 1000000 ]; then  # 至少 1MB
+                download_success=true
+                log_success "Downloaded from: $url"
+                break
+            fi
+        fi
+    done
 
-    if [ $curl_status -ne 0 ] || [ ! -s "$installer_path" ]; then
-        log_error "Failed to download CUDA"
-        log_error "curl output: $curl_output"
+    if [ "$download_success" = false ]; then
+        log_error "Failed to download CUDA installer"
         log_info "Please download manually from:"
         log_info "  https://developer.nvidia.com/cuda-downloads"
+        log_info "  Select: Linux > x86_64 > 12 > runfile (local)"
         return 1
     fi
 
-    local file_size=$(stat -c%s "$installer_path" 2>/dev/null || stat -f%z "$installer_path" 2>/dev/null)
-    log_info "Downloaded: $file_size bytes"
-
-    # 验证下载的文件
-    local file_header=$(head -c 100 "$installer_path")
-    if [[ ! "$file_header" =~ ELF|Mach-O ]]; then
-        log_error "Downloaded file is not a valid executable"
-        log_error "File header: $file_header"
-        rm -f "$installer_path"
-        return 1
-    fi
-
-    log_success "CUDA installer verified"
-
-    # 安装 CUDA（静默模式）
     log_info "Installing CUDA (this may take several minutes)..."
     chmod +x "$installer_path"
 
@@ -502,9 +590,8 @@ install_cuda() {
     # WSL2 中 GPU 检测必须在普通用户下进行（不能使用 sudo）
     # 先检测 GPU（WSL2 需要普通用户访问 Windows 驱动）
     test_gpu
-    local gpu_info="$gpu"
     if [ "$HAS_GPU" = "true" ]; then
-        log_info "GPU detected: $gpu_info"
+        log_info "GPU detected: $gpu"
     else
         log_warn "No NVIDIA GPU detected"
     fi
@@ -529,7 +616,7 @@ install_cuda() {
         echo -e "  No GPU detected or CUDA not installed."
     fi
     echo ""
-    echo -e "  ${GREEN}Option 1:${NC} Install CUDA Toolkit 12.1 (auto-download)"
+    echo -e "  ${GREEN}Option 1:${NC} Install CUDA Toolkit 12.1 (auto)"
     echo -e "  ${GREEN}Option 2:${NC} Show download links"
     echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
     echo ""
@@ -546,22 +633,9 @@ install_cuda() {
                 echo -e "${YELLOW}Switching to sudo for installation...${NC}"
                 echo ""
 
-                # 保存 GPU 检测结果到临时文件，供 sudo 模式使用
-                local gpu_status_file="/tmp/wingscribe_gpu_status_$$"
-                echo "HAS_GPU=$HAS_GPU" > "$gpu_status_file"
-                echo "GPU_INFO=$gpu_info" >> "$gpu_status_file"
-
-                # 使用 sudo 运行 CUDA 安装，使用绝对路径
-                exec sudo HAS_GPU_STATUS_FILE="$gpu_status_file" bash "$SCRIPT_DIR/deploy.sh" cuda_install "$gpu_info"
+                # 使用 sudo 运行 CUDA 安装
+                exec sudo bash "$SCRIPT_DIR/deploy.sh" cuda_install
                 return 0
-            fi
-
-            # 此时已处于 sudo 模式
-            # 检查是否有传入的 GPU 状态
-            if [ -n "$HAS_GPU_STATUS_FILE" ] && [ -f "$HAS_GPU_STATUS_FILE" ]; then
-                . "$HAS_GPU_STATUS_FILE"
-                rm -f "$HAS_GPU_STATUS_FILE"
-                log_info "GPU info from previous detection: $GPU_INFO"
             fi
 
             install_cuda_auto
@@ -1048,19 +1122,6 @@ main() {
             echo -e "${CYAN}  ${GREEN}CUDA Installation${NC}                            ${CYAN}"
             echo -e "${CYAN}========================================${NC}"
             echo ""
-
-            # 如果是 cuda_install（sudo 模式），检查是否有传入的 GPU 状态
-            if [ "$command" = "cuda_install" ]; then
-                # 从环境变量读取 GPU 状态
-                if [ -n "$HAS_GPU_STATUS_FILE" ] && [ -f "$HAS_GPU_STATUS_FILE" ]; then
-                    . "$HAS_GPU_STATUS_FILE"
-                    rm -f "$HAS_GPU_STATUS_FILE"
-                fi
-                # $2 保留 GPU 名称
-                if [ -n "$2" ]; then
-                    GPU_INFO="$2"
-                fi
-            fi
 
             install_cuda
             ;;
