@@ -480,20 +480,14 @@ install_cuda_auto() {
 install_cuda() {
     log_step "Checking CUDA environment..."
 
-    # 检测是否以 sudo 运行
-    local is_sudo=false
-    if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
-        is_sudo=true
-    fi
-
-    # 先检测 GPU（WSL2 需要普通用户）
-    if [ "$is_sudo" = false ]; then
-        test_gpu
-        if [ "$HAS_GPU" = "true" ]; then
-            log_info "GPU detected: NVIDIA GPU"
-        else
-            log_warn "No NVIDIA GPU detected"
-        fi
+    # WSL2 中 GPU 检测必须在普通用户下进行（不能使用 sudo）
+    # 先检测 GPU（WSL2 需要普通用户访问 Windows 驱动）
+    test_gpu
+    local gpu_info="$gpu"
+    if [ "$HAS_GPU" = "true" ]; then
+        log_info "GPU detected: $gpu_info"
+    else
+        log_warn "No NVIDIA GPU detected"
     fi
 
     # 检测 CUDA
@@ -508,7 +502,7 @@ install_cuda() {
     echo -e "${CYAN}========================================${NC}"
     echo ""
 
-    # 根据 sudo 状态显示不同信息
+    # 根据 GPU 状态显示不同信息
     if [ "$HAS_GPU" = "true" ]; then
         echo -e "  GPU detected but CUDA Toolkit not installed."
         echo -e "  CUDA is required for GPU acceleration."
@@ -516,7 +510,7 @@ install_cuda() {
         echo -e "  No GPU detected or CUDA not installed."
     fi
     echo ""
-    echo -e "  ${GREEN}Option 1:${NC} Install CUDA Toolkit 12.1"
+    echo -e "  ${GREEN}Option 1:${NC} Install CUDA Toolkit 12.1 (auto-download)"
     echo -e "  ${GREEN}Option 2:${NC} Show download links"
     echo -e "  ${YELLOW}Option 3:${NC} Continue with CPU mode"
     echo ""
@@ -530,13 +524,27 @@ install_cuda() {
             if [ "$EUID" -ne 0 ]; then
                 log_info "CUDA installation requires root privileges"
                 echo ""
-                echo -e "${YELLOW}Please run with sudo:${NC}"
-                echo "  sudo bash $0 cuda"
+                echo -e "${YELLOW}Switching to sudo for installation...${NC}"
                 echo ""
-                log_info "Or enter your password to continue:"
-                exec sudo bash "$0" cuda
+
+                # 保存 GPU 检测结果到临时文件，供 sudo 模式使用
+                local gpu_status_file="/tmp/wingscribe_gpu_status_$$"
+                echo "HAS_GPU=$HAS_GPU" > "$gpu_status_file"
+                echo "GPU_INFO=$gpu_info" >> "$gpu_status_file"
+
+                # 使用 sudo 运行 CUDA 安装，传递状态文件路径
+                exec sudo HAS_GPU_STATUS_FILE="$gpu_status_file" bash "$0" cuda_install "$gpu_info"
                 return 0
             fi
+
+            # 此时已处于 sudo 模式
+            # 检查是否有传入的 GPU 状态
+            if [ -n "$HAS_GPU_STATUS_FILE" ] && [ -f "$HAS_GPU_STATUS_FILE" ]; then
+                . "$HAS_GPU_STATUS_FILE"
+                rm -f "$HAS_GPU_STATUS_FILE"
+                log_info "GPU info from previous detection: $GPU_INFO"
+            fi
+
             install_cuda_auto
             ;;
         2)
@@ -1015,12 +1023,26 @@ main() {
             echo ""
             get_project
             ;;
-        cuda)
+        cuda|cuda_install)
             echo ""
             echo -e "${CYAN}========================================${NC}"
             echo -e "${CYAN}  ${GREEN}CUDA Installation${NC}                            ${CYAN}"
             echo -e "${CYAN}========================================${NC}"
             echo ""
+
+            # 如果是 cuda_install（sudo 模式），检查是否有传入的 GPU 状态
+            if [ "$command" = "cuda_install" ]; then
+                # 从环境变量读取 GPU 状态
+                if [ -n "$HAS_GPU_STATUS_FILE" ] && [ -f "$HAS_GPU_STATUS_FILE" ]; then
+                    . "$HAS_GPU_STATUS_FILE"
+                    rm -f "$HAS_GPU_STATUS_FILE"
+                fi
+                # $2 保留 GPU 名称
+                if [ -n "$2" ]; then
+                    GPU_INFO="$2"
+                fi
+            fi
+
             install_cuda
             ;;
         web|w)
