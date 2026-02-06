@@ -51,26 +51,25 @@ ask_input() {
     local prompt="$1"
     local default="${2:-}"
     local result=""
+
     # 检查是否是管道/非交互式环境
     if [ ! -t 0 ]; then
         # 非交互式环境，直接返回默认值
-        echo "$default"
+        echo "$default" | tr -d '\n\r'
         return
     fi
+
     if [ -n "$default" ]; then
         printf "${CYAN}%s${NC} [%s]: " "$prompt" "$default"
-        read -r result
-        # 去除首尾空白
-        result=$(echo "$result" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$result" ] && result="$default"
-        echo "$result"
     else
         printf "${CYAN}%s${NC}: " "$prompt"
-        read -r result
-        # 去除首尾空白
-        result=$(echo "$result" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        echo "$result"
     fi
+    read -r result
+
+    # 去除首尾空白和换行符
+    result=$(echo "$result" | tr -d '[:space:]')
+    [ -z "$result" ] && result="$default"
+    echo "$result"
 }
 
 ask_yes_no() {
