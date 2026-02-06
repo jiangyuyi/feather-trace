@@ -3,7 +3,7 @@ sys.path.insert(0, 'src')
 from metadata.ioc_manager import IOCManager
 import json
 
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 
 # Check Tinamidae
 print("=== Tinamidae family ===")

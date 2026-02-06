@@ -13,7 +13,7 @@ for i, row in df.head(10).iterrows():
 
 # Check genus_mapping keys
 from metadata.ioc_manager import IOCManager
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 genus_mapping = ioc.load_csv_mapping('data/references/bird_genus_mapping.csv', 'Genus_SCI', 'Genus_CN')
 print(f"\nGenus mapping sample (first 5):")
 for k, v in list(genus_mapping.items())[:5]:

@@ -1,6 +1,6 @@
-# Project Specification: FeatherTrace
+# Project Specification: WingScribe
 **Version:** 1.6
-**Project Name:** feather_trace
+**Project Name:** wingscribe
 **Language:** Python 3.10+
 **Description:** A personal bird photography automation pipeline and management system. It automates focus detection, cropping, AI species recognition (BioCLIP/Dongniao/HF), metadata injection, and provides a local web interface for searching, retrieval, and manual annotation.
 
@@ -25,7 +25,7 @@ feather_trace/
 │   └── ioc_list.xlsx         # IOC World Bird List
 ├── data/
 │   ├── db/
-│   │   └── feathertrace.db   # SQLite Database
+│   │   └── wingscribe.db   # SQLite Database
 │   ├── raw/                  # Input folder
 │   └── processed/            # Output folder
 ├── docs/

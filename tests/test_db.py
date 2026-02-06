@@ -10,7 +10,7 @@ from src.metadata.ioc_manager import IOCManager
 logging.basicConfig(level=logging.INFO)
 
 def test_ioc_manager():
-    db_path = "data/db/test_feathertrace.db"
+    db_path = "data/db/test_wingscribe.db"
     # Use the real Excel file if available, otherwise mock
     real_xlsx = "config/Multiling IOC 15.1_d.xlsx"
     

@@ -143,7 +143,7 @@ print("Building comprehensive genus/family/order mapping...")
 
 # Load existing mappings
 from metadata.ioc_manager import IOCManager
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 
 existing_genus = ioc.load_csv_mapping('data/references/bird_genus_mapping.csv', 'Genus_SCI', 'Genus_CN')
 existing_family = ioc.load_csv_mapping('data/references/bird_family_mapping.csv', 'Family_SCI', 'Family_CN')

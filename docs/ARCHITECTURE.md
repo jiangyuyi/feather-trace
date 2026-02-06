@@ -53,7 +53,7 @@ FeatherTrace is an automated pipeline for bird photography management. It bridge
 
 ## Infrastructure
 
-*   **Database**: SQLite (`feathertrace.db`).
+*   **Database**: SQLite (`wingscribe.db`).
 *   **AI Models**:
     *   **Detection**: YOLOv8n (Local).
     *   **Classification**: BioCLIP (OpenCLIP ViT-B/16) or External APIs.

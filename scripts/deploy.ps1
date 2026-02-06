@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env pwsh
 #===============================================================================
-# FeatherTrace Windows Deployment Script
+# WingScribe Windows Deployment Script
 #===============================================================================
 
 $ProgressPreference = "SilentlyContinue"
@@ -17,8 +17,8 @@ try {
 }
 
 $PROJECT_ROOT = $PSScriptRoot
-$GITEE_MIRROR = "https://gitee.com/jiangyuyi/feather-trace.git"
-$GITHUB_ORIGIN = "https://github.com/jiangyuyi/feather-trace.git"
+$GITEE_MIRROR = "https://gitee.com/jiangyuyi/wingscribe.git"
+$GITHUB_ORIGIN = "https://github.com/jiangyuyi/wingscribe.git"
 $PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 $COLORS = @{
@@ -773,7 +773,7 @@ function Invoke-ConfigWizard {
     $lines += "    root_dir: ""$($outputDir.Replace('\', '/'))"""
     $lines += "    structure_template: ""{source_structure}/{filename}_{species_cn}_{confidence}"""
     $lines += "    write_back_to_source: false"
-    $lines += "  db_path: ""data/db/feathertrace.db"""
+    $lines += "  db_path: ""data/db/wingscribe.db"""
     $lines += "  ioc_list_path: ""data/references/Multiling IOC 15.1_d.xlsx"""
     $lines += "  model_cache_dir: ""data/models"""
     $lines += "processing:"
@@ -968,7 +968,7 @@ function Invoke-Main {
                 Write-Host ""
                 Write-Host "  Format: Year/yyyymmdd_Location/*.jpg" -ForegroundColor Gray
                 Write-Host ""
-                Write-Host "  GitHub: https://github.com/jiangyuyi/feather-trace" -ForegroundColor Gray
+                Write-Host "  GitHub: https://github.com/jiangyuyi/wingscribe" -ForegroundColor Gray
                 Write-Host ""
                 Pause-Host
             }

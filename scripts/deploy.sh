@@ -1,6 +1,6 @@
 #!/bin/bash
 #===============================================================================
-# FeatherTrace 一键部署脚本 - Linux/macOS/WSL
+# WingScribe 一键部署脚本 - Linux/macOS/WSL
 #===============================================================================
 
 # 立即退出管道失败
@@ -56,8 +56,8 @@ else
 fi
 
 # 配置变量
-GITEE_MIRROR="https://gitee.com/jiangyuyi/feather-trace.git"
-GITHUB_ORIGIN="https://github.com/jiangyuyi/feather-trace.git"
+GITEE_MIRROR="https://gitee.com/jiangyuyi/wingscribe.git"
+GITHUB_ORIGIN="https://github.com/jiangyuyi/wingscribe.git"
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 HF_MIRROR="https://hf-mirror.com"
 PROXY=""
@@ -593,7 +593,7 @@ paths:
     root_dir: "${output_dir//\\/\\\\}"
     structure_template: "{source_structure}/{filename}_{species_cn}_{confidence}"
     write_back_to_source: false
-  db_path: "data/db/feathertrace.db"
+  db_path: "data/db/wingscribe.db"
   ioc_list_path: "data/references/Multiling IOC 15.1_d.xlsx"
   model_cache_dir: "data/models"
 processing:
@@ -724,10 +724,10 @@ start_docker_local() {
     # 检查是否有 GPU
     if test_gpu && command_exists nvidia-docker; then
         echo -e "${CYAN}  Using GPU profile${NC}"
-        docker compose up -d feathertrace-gpu
+        docker compose up -d wingscribe-gpu
     else
         echo -e "${CYAN}  Using CPU mode${NC}"
-        docker compose up -d feathertrace
+        docker compose up -d wingscribe
     fi
 
     echo ""

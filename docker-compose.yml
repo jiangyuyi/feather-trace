@@ -1,14 +1,14 @@
-# FeatherTrace 本地一体化部署配置
+# WingScribe 本地一体化部署配置
 # 默认配置，所有服务运行在一起
 
 version: '3.8'
 
 services:
-  feathertrace:
+  wingscribe:
     build:
       context: .
       dockerfile: Dockerfile.cpu
-    container_name: feathertrace
+    container_name: wingscribe
     ports:
       - "8000:8000"
     environment:
@@ -26,11 +26,11 @@ services:
     restart: unless-stopped
 
   # 可选：GPU 服务（需要 nvidia-docker）
-  feathertrace-gpu:
+  wingscribe-gpu:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-    container_name: feathertrace-gpu
+    container_name: wingscribe-gpu
     ports:
       - "8001:8000"
     environment:

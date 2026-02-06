@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ============================================
-echo FeatherTrace 数据库初始化
+echo WingScribe 数据库初始化
 echo ============================================
 
 cd /d "%~dp0"
@@ -10,10 +10,10 @@ REM 删除旧的数据库文件
 echo.
 echo [1/2] 清理旧数据库...
 if exist "data/db" (
-    del /q "data/db\feathertrace.db" 2>nul
-    del /q "data/db\feathertrace_new.db" 2>nul
-    del /q "data/db\feathertrace_new2.db" 2>nul
-    del /q "data/db\feathertrace_test.db" 2>nul
+    del /q "data/db\wingscribe.db" 2>nul
+    del /q "data/db\wingscribe_new.db" 2>nul
+    del /q "data/db\wingscribe_new2.db" 2>nul
+    del /q "data/db\wingscribe_test.db" 2>nul
     echo 已清理 data/db 目录下的旧数据库文件
 ) else (
     mkdir "data\db"
@@ -30,7 +30,7 @@ from metadata.ioc_manager import IOCManager
 import logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 ioc.import_from_excel(
     'data/references/Multiling IOC 15.1_d.xlsx',
     refs_dir='data/references'

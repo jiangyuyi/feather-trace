@@ -64,10 +64,10 @@ WingScribe 是一个专为鸟类摄影师打造的自动化管理流水线。它
 
 ```powershell
 # 国内用户（Gitee，无需梯子）：
-Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/feather-trace/raw/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
+Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
 
 # 海外用户：
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/feather-trace/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; .\deploy.ps1
 ```
 
 > **说明**: Windows 默认禁止运行 PowerShell 脚本。上述命令会自动设置执行策略并运行一键部署。
@@ -76,10 +76,10 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/feather-trac
 
 ```bash
 # 国内用户（Gitee，无需梯子）：
-curl -fsSL https://gitee.com/jiangyuyi/feather-trace/raw/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
+curl -fsSL https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
 
 # 海外用户：
-curl -fsSL https://raw.githubusercontent.com/jiangyuyi/feather-trace/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
+curl -fsSL https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.sh -o deploy.sh && bash deploy.sh deploy
 ```
 
 > **说明**: Gitee 为国内镜像站，下载速度更快且无需翻墙工具；GitHub 为官方仓库，版本更新更及时。
@@ -207,7 +207,7 @@ bash scripts/deploy.sh docker:all
 **本地一体化部署 (docker-compose.yml):**
 ```yaml
 services:
-  feathertrace:
+  wingscribe:
     build: .
     ports:
       - "8000:8000"

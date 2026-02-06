@@ -3,7 +3,7 @@ sys.path.insert(0, 'src')
 import json
 from metadata.ioc_manager import IOCManager
 
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 tree = ioc.get_taxonomy_tree(include_empty=True)
 
 # Count how many are Chinese vs Latin

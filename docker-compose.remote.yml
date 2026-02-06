@@ -1,4 +1,4 @@
-# FeatherTrace 分离部署配置
+# WingScribe 分离部署配置
 # 可选的额外服务，用于大规模部署
 
 version: '3.8'
@@ -7,7 +7,7 @@ services:
   # Redis 消息队列（用于大批量任务）
   redis:
     image: redis:7-alpine
-    container_name: feathertrace-redis
+    container_name: wingscribe-redis
     ports:
       - "6379:6379"
     volumes:
@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cpu
-    container_name: feathertrace-recognition-cpu
+    container_name: wingscribe-recognition-cpu
     ports:
       - "8080:8000"
     environment:
@@ -54,7 +54,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-    container_name: feathertrace-recognition-gpu
+    container_name: wingscribe-recognition-gpu
     ports:
       - "8081:8000"
     environment:

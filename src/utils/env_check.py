@@ -26,7 +26,7 @@ def check_system_dependencies(config: dict) -> bool:
     paths_to_check = [
         config.get('paths', {}).get('raw_dir', 'data/raw'),
         config.get('paths', {}).get('processed_dir', 'data/processed'),
-        Path(config.get('paths', {}).get('db_path', 'data/db/feathertrace.db')).parent,
+        Path(config.get('paths', {}).get('db_path', 'data/db/wingscribe.db')).parent,
         config.get('paths', {}).get('model_cache_dir', 'data/models')
     ]
 

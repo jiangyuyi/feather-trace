@@ -12,7 +12,7 @@ def has_chinese(s):
             return True
     return False
 
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 tree = ioc.get_taxonomy_tree(include_empty=True)
 
 # Count coverage

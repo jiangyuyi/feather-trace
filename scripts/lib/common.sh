@@ -265,14 +265,14 @@ init_config_dir() {
     # 创建默认配置（如果不存在）
     if [ ! -f "$CONFIG_FILE" ]; then
         cat > "$CONFIG_FILE" << 'EOF'
-# FeatherTrace 部署配置
+# WingScribe 部署配置
 # 此文件由部署脚本自动生成
 
 # GitHub 镜像地址 (Gitee)
-GITEE_MIRROR="https://gitee.com/jiangyuyi/feather-trace.git"
+GITEE_MIRROR="https://gitee.com/jiangyuyi/wingscribe.git"
 
 # GitHub 原始地址
-GITHUB_ORIGIN="https://github.com/jiangyuyi/feather-trace.git"
+GITHUB_ORIGIN="https://github.com/jiangyuyi/wingscribe.git"
 
 # HuggingFace 镜像
 HF_MIRROR="https://hf-mirror.com"

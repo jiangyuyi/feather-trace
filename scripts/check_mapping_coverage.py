@@ -17,7 +17,7 @@ for _, row in df.iterrows():
 print(f"Total unique genera in IOC Excel: {len(all_genera)}")
 
 # Load genus mapping
-ioc = IOCManager('data/db/feathertrace.db')
+ioc = IOCManager('data/db/wingscribe.db')
 genus_mapping = ioc.load_csv_mapping('data/references/bird_genus_mapping.csv', 'Genus_SCI', 'Genus_CN')
 print(f"Genera in genus_mapping.csv: {len(genus_mapping)}")
 

@@ -10,7 +10,7 @@ from src.metadata.ioc_manager import IOCManager
 logging.basicConfig(level=logging.INFO)
 
 def populate():
-    db_path = "data/db/feathertrace.db"
+    db_path = "data/db/wingscribe.db"
     xlsx_path = "config/Multiling IOC 15.1_d.xlsx"
     
     print(f"Populating {db_path} from {xlsx_path}...")

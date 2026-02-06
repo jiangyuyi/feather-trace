@@ -272,7 +272,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         version="2.0.0",
-        platform="feathertrace",
+        platform="wingscribe",
         gpu_available=torch.cuda.is_available(),
         gpu_device=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         models_loaded=["bioclip"]

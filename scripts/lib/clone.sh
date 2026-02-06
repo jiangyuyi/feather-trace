@@ -258,11 +258,11 @@ download_reference_data() {
     log_warn "需要下载 IOC 鸟类分类数据"
     log_info "请从以下地址下载并保存到 $ref_dir:"
     log_info "  - IOC World Bird List: https://www.worldbirdnames.org/"
-    log_info "  - 直接下载: https://github.com/jiangyuyi/feather-trace/raw/master/data/references/"
+    log_info "  - 直接下载: https://github.com/jiangyuyi/wingscribe/raw/master/data/references/"
 
     if ask_yes_no "是否尝试自动下载?" "n"; then
         local files=(
-            "https://github.com/jiangyuyi/feather-trace/raw/master/data/references/Multiling%20IOC%2015.1_d.xlsx"
+            "https://github.com/jiangyuyi/wingscribe/raw/master/data/references/Multiling%20IOC%2015.1_d.xlsx"
         )
 
         for url in "${files[@]}"; do

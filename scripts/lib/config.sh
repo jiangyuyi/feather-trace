@@ -340,7 +340,7 @@ paths:
     structure_template: "{source_structure}/{filename}_{species_cn}_{confidence}"
     write_back_to_source: false
 
-  db_path: "data/db/feathertrace.db"
+  db_path: "data/db/wingscribe.db"
   ioc_list_path: "data/references/Multiling IOC 15.1_d.xlsx"
   cn_taxonomy_path: "data/references/动物界-脊索动物门-2025-10626.xlsx"
   china_list: "config/dictionaries/china_bird_list.txt"
