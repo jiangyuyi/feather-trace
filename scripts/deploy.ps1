@@ -382,13 +382,12 @@ function Install-ExifTool {
     if (Test-Command "winget") {
         Log-Info "Installing via winget (OliverBetz.ExifTool)..."
 
-        # 先不抑制输出，捕获完整结果
-        $installResult = & winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1
+        # 静默安装，抑制所有输出（避免乱码）
+        $installResult = & winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         $exitCode = $LASTEXITCODE
-        $outputText = $installResult | Out-String
 
-        Log-Info "winget exit code: $exitCode"
-        Log-Info "winget output: $outputText"
+        if ($exitCode -eq 0) {
+            Log-Success "Winget installation completed"
 
         if ($exitCode -eq 0) {
             Log-Success "Winget installation completed"
