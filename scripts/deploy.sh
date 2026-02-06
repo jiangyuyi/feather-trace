@@ -277,17 +277,34 @@ install_exiftool() {
 }
 
 install_venv_if_needed() {
+    # 检测 Python 版本
+    local py_version=$(python3 --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    local py_major=$(echo "$py_version" | cut -d. -f1)
+    local py_minor=$(echo "$py_version" | cut -d. -f2)
+
     # 检查 venv 模块是否存在
-    if ! python3.11 -c "import venv" 2>/dev/null; then
-        log_info "Installing python3-venv..."
+    if ! python3 -c "import venv" 2>/dev/null; then
+        log_warn "python3-venv not found, attempting to install..."
+
+        local pkg_name="python${py_major}.${py_minor}-venv"
+
         if command_exists apt-get; then
+            log_info "Installing $pkg_name..."
             sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
-            sudo apt-get install -y python3.11-venv 2>&1 | grep -v "^Selecting" | head -5
+            sudo apt-get install -y "$pkg_name" 2>&1 | grep -v "^Selecting" | head -5
         elif command_exists yum; then
             sudo yum install -y python3-venv
         elif command_exists dnf; then
             sudo dnf install -y python3-venv
         fi
+
+        # 验证安装
+        if ! python3 -c "import venv" 2>/dev/null; then
+            log_error "Failed to install python3-venv"
+            log_info "Please run: sudo apt-get install $pkg_name"
+            return 1
+        fi
+        log_success "python3-venv installed"
     fi
 }
 
@@ -732,24 +749,31 @@ get_project() {
     local tempDir="/tmp/wingscribe_clone_$$"
     mkdir -p "$tempDir"
 
+    # 尝试 Gitee
+    log_info "Trying Gitee..."
     if git clone --depth 1 "$GITEE_MIRROR" "$tempDir" 2>&1; then
         if [ -f "${tempDir}/requirements.txt" ]; then
             # 自动改回 GitHub
             git -C "$tempDir" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
             cloneSuccess=true
-            log_success "Cloned from Gitee"
+        else
+            lastError="Clone succeeded but requirements.txt not found"
         fi
     else
         lastError=$(git clone --depth 1 "$GITEE_MIRROR" "$tempDir" 2>&1)
     fi
 
-    # 尝试 GitHub
+    # 尝试 GitHub（如果 Gitee 失败）
     if [ "$cloneSuccess" = false ]; then
         log_warn "Gitee clone failed, trying GitHub..."
+        rm -rf "$tempDir"
+        mkdir -p "$tempDir"
+
         if git clone --depth 1 "$GITHUB_ORIGIN" "$tempDir" 2>&1; then
             if [ -f "${tempDir}/requirements.txt" ]; then
                 cloneSuccess=true
-                log_success "Cloned from GitHub"
+            else
+                lastError="Clone succeeded but requirements.txt not found"
             fi
         else
             lastError=$(git clone --depth 1 "$GITHUB_ORIGIN" "$tempDir" 2>&1)
@@ -768,8 +792,13 @@ get_project() {
         # 清理临时目录
         rm -rf "$tempDir"
 
-        log_success "Project cloned successfully"
-        return 0
+        # 验证文件已移动
+        if [ -f "${PROJECT_ROOT}/requirements.txt" ]; then
+            log_success "Project cloned successfully"
+            return 0
+        else
+            log_error "Clone verification failed: requirements.txt not found in destination"
+        fi
     fi
 
     # Clone 失败
@@ -778,8 +807,8 @@ get_project() {
     echo ""
     echo -e "${YELLOW}Possible solutions:${NC}"
     echo -e "  1. Check internet connection"
-    echo -e "  2. Install Git: https://npm.taobao.org/mirrors/git-for-windows"
-    echo -e "  3. Or manually clone the repository to this folder"
+    echo -e "  2. Install Git: sudo apt-get install git"
+    echo -e "  3. Or manually clone: git clone https://gitee.com/jiangyuyi/wingscribe.git ."
     echo ""
 
     return 1
@@ -1073,7 +1102,22 @@ main() {
             fi
 
             log_step "3/4 Getting project..."
-            get_project
+            if ! get_project; then
+                log_error "Failed to get project from git"
+                echo ""
+                echo -e "${YELLOW}Please manually clone the project:${NC}"
+                echo "  git clone https://gitee.com/jiangyuyi/wingscribe.git ."
+                echo ""
+                if ! ask_yes_no "Continue without project files?" "n"; then
+                    exit 1
+                fi
+            fi
+
+            # 验证 requirements.txt 存在
+            if [ ! -f "${PROJECT_ROOT}/requirements.txt" ]; then
+                log_error "requirements.txt not found!"
+                exit 1
+            fi
 
             log_step "4/4 Installing Python dependencies..."
             install_python_deps
@@ -1094,6 +1138,13 @@ main() {
             echo -e "${CYAN}  ${WHITE}Install Dependencies${NC}                         ${CYAN}"
             echo -e "${CYAN}========================================${NC}"
             echo ""
+
+            # 验证 requirements.txt 存在
+            if [ ! -f "${PROJECT_ROOT}/requirements.txt" ]; then
+                log_error "requirements.txt not found!"
+                log_info "Please run 'git clone' first or ensure you are in the project directory"
+                exit 1
+            fi
 
             log_step "Installing system dependencies..."
             if ! command_exists git; then install_git || true; fi
