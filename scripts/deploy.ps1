@@ -681,22 +681,27 @@ function Install-PythonDependencies {
     Log-Info "Configuring pip mirror..."
     & $pythonVenv -m pip config set global.index-url $PIP_MIRROR 2>&1 | Out-Null
 
-    # 升级 pip
+    # 升级 pip（显示进度）
     Log-Info "Upgrading pip..."
-    & $pythonVenv -m pip install --upgrade pip 2>&1 | Out-Null
+    $pipUpgrade = Start-Process -FilePath $pythonVenv -ArgumentList "-m pip install --upgrade pip" -NoNewWindow -Wait -PassThru
+    if ($pipUpgrade.ExitCode -ne 0) {
+        Log-Warn "pip upgrade failed, continuing..."
+    }
 
-    # 安装依赖
+    # 安装依赖（显示进度和下载速度）
     Log-Info "Installing requirements.txt..."
-    & $pythonVenv -m pip install -r "$PROJECT_ROOT\requirements.txt" 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    Log-Info "Downloading and installing packages... (this may take several minutes)"
+
+    $pipInstall = Start-Process -FilePath $pythonVenv -ArgumentList "-m pip install -r ""$PROJECT_ROOT\requirements.txt"" --progress-bar on" -NoNewWindow -Wait -PassThru
+    if ($pipInstall.ExitCode -eq 0) {
         Log-Success "Python dependencies installed"
         return $true
     }
 
     # 失败重试
     Log-Warn "First attempt failed, retrying..."
-    & $pythonVenv -m pip install -r "$PROJECT_ROOT\requirements.txt" 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    $pipRetry = Start-Process -FilePath $pythonVenv -ArgumentList "-m pip install -r ""$PROJECT_ROOT\requirements.txt"" --progress-bar on" -NoNewWindow -Wait -PassThru
+    if ($pipRetry.ExitCode -eq 0) {
         Log-Success "Python dependencies installed (retry)"
         return $true
     }
