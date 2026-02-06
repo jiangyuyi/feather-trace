@@ -355,7 +355,7 @@ function Install-Git {
         choco install git -y
         if ($LASTEXITCODE -eq 0) { Log-Success "Git installed"; return $true }
     }
-    Log-Error "Cannot install Git automatically. Download: https://git-scm.com/download/win"
+    Log-Error "Cannot install Git automatically. Download: https://npm.taobao.org/mirrors/git-for-windows"
     return $false
 }
 
@@ -378,7 +378,7 @@ function Install-Python {
         choco install python311 -y
         if ($LASTEXITCODE -eq 0) { Log-Success "Python installed"; return $true }
     }
-    Log-Error "Cannot install Python automatically. Download: https://www.python.org/downloads/"
+    Log-Error "Cannot install Python automatically. Download: https://registry.npmmirror.com/binaries/python"
     return $false
 }
 
@@ -463,7 +463,7 @@ function Install-ExifTool {
     }
 
     Log-Error "Cannot install ExifTool automatically."
-    Log-Info "Please download manually: https://exiftool.org/"
+    Log-Info "Please download manually: https://exiftool.org/ or https://gitee.com/jiangyuyi/wingscribe/releases"
     return $false
 }
 
@@ -506,7 +506,7 @@ function Install-AllDependencies {
         if (Read-YesNo "Install ExifTool?") {
             if (-not (Install-ExifTool)) {
                 Log-Error "ExifTool installation failed. Please install manually."
-                Log-Info "Download: https://exiftool.org/"
+                Log-Info "Download: https://exiftool.org/ or https://gitee.com/jiangyuyi/wingscribe/releases"
                 exit 1
             }
         } else {
@@ -648,7 +648,7 @@ function Get-Project {
         Write-Host ""
         Write-Host "  Possible solutions:" -ForegroundColor Yellow
         Write-Host "    1. Check internet connection" -ForegroundColor Gray
-        Write-Host "    2. Install Git: https://git-scm.com/download/win" -ForegroundColor Gray
+        Write-Host "    2. Install Git: https://npm.taobao.org/mirrors/git-for-windows" -ForegroundColor Gray
         Write-Host "    3. Or manually clone the repository to this folder" -ForegroundColor Gray
         Write-Host ""
 
