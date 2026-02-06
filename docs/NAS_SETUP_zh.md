@@ -1,6 +1,6 @@
 # NAS 网络存储设置指南 (WebDAV / SMB)
 
-羽迹 (FeatherTrace) 通过 **操作系统级挂载** 支持网络存储（NAS）。这意味着您可以将远程驱动器（WebDAV 或 Samba/SMB）挂载为本地盘符（Windows）或目录（macOS/Linux），然后像使用本地文件夹一样配置羽迹。
+飞羽志 (WingScribe) 通过 **操作系统级挂载** 支持网络存储（NAS）。这意味着您可以将远程驱动器（WebDAV 或 Samba/SMB）挂载为本地盘符（Windows）或目录（macOS/Linux），然后像使用本地文件夹一样配置飞羽志。
 
 ## 1. 挂载远程驱动器
 
@@ -29,7 +29,7 @@
 sudo mount -t cifs -o username=user,password=pass //192.168.1.100/Photos /mnt/nas_photos
 ```
 
-## 2. 配置羽迹 (FeatherTrace)
+## 2. 配置飞羽志 (WingScribe)
 
 编辑 `config/settings.yaml`。您必须将挂载后的路径同时添加到 `allowed_roots`（出于安全考虑的白名单）和 `sources`（扫描源）。
 
@@ -61,7 +61,7 @@ paths:
 ```
 
 ## 3. 重启应用
-修改 `settings.yaml` 后，重启羽迹 Web 服务以使配置生效：
+修改 `settings.yaml` 后，重启飞羽志 Web 服务以使配置生效：
 ```bash
 python src/web/app.py
 ```
@@ -69,4 +69,4 @@ python src/web/app.py
 ## 常见问题
 *   **权限问题**: 请确保运行 `python` 的用户对挂载的目录拥有"读取"和"写入"权限。
 *   **性能**: 网络存储的扫描速度取决于网络带宽。对于包含数万张照片的目录，首次扫描可能较慢。
-*   **挂载稳定性**: 建议在系统启动后手动验证网络驱动器是否已挂载，再启动 FeatherTrace。
+*   **挂载稳定性**: 建议在系统启动后手动验证网络驱动器是否已挂载，再启动 WingScribe。

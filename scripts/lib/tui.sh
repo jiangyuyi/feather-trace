@@ -1,6 +1,6 @@
 #!/bin/bash
 #===============================================================================
-# FeatherTrace 一键部署脚本 - TUI 界面模块
+# WingScribe 一键部署脚本 - TUI 界面模块
 #===============================================================================
 
 # 加载通用函数
@@ -21,7 +21,7 @@ show_main_menu() {
     clear
     echo -e "${CYAN}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓${NC}"
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
-    echo -e "${CYAN}┃${NC}    ${WHITE}🪶  羽迹 FeatherTrace 一键部署${NC}           ${CYAN}┃${NC}"
+    echo -e "${CYAN}┃${NC}    ${WHITE}🪶  飞羽志 WingScribe 一键部署${NC}           ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}    ${GREEN}AI 驱动的鸟类照片智能管理系统${NC}           ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
@@ -137,7 +137,7 @@ show_help() {
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
     echo -e "${CYAN}┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
-    echo -e "${CYAN}┃${NC}  ${WHITE}羽迹${NC} 是一款 AI 驱动的鸟类照片管理系统        ${CYAN}┃${NC}"
+    echo -e "${CYAN}┃${NC}  ${WHITE}飞羽志${NC} 是一款 AI 驱动的鸟类照片管理系统        ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}                                            ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}  ${WHITE}主要功能:${NC}                                        ${CYAN}┃${NC}"
     echo -e "${CYAN}┃${NC}    • YOLOv8 鸟类检测                             ${CYAN}┃${NC}"
@@ -377,7 +377,7 @@ run_tui() {
                 ;;
             7)  # 退出
                 echo ""
-                log_info "感谢使用羽迹！再见！"
+                log_info "感谢使用飞羽志！再见！"
                 exit 0
                 ;;
             *)

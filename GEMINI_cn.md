@@ -1,4 +1,4 @@
-# 项目说明：FeatherTrace (羽迹)
+# 项目说明：WingScribe (飞羽志)
 
 **版本:** 1.6
 **语言:** Python 3.10+

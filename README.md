@@ -1,9 +1,9 @@
-# FeatherTrace (羽迹) - 智能鸟类摄影管理系统
+# WingScribe (飞羽志) - 智能鸟类摄影管理系统
 
 **版本:** 2.0.0
 **状态:** 新版发布 (云端识别 + 分离部署支持)
 
-FeatherTrace 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
+WingScribe 是一个专为鸟类摄影师打造的自动化管理流水线。它利用计算机视觉 (YOLOv8) 和多模态大模型 (BioCLIP) 技术，自动完成照片的**检测、筛选、物种识别、元数据注入**以及**层级归档**，并提供一个支持人工校对的本地 Web 界面。
 
 本项目是我个人的第一个从零开始完全使用Vibe Coding的项目，使用了Gemini CLI 、Claude Code with MiniMax2.1/GLM4.7，作为一个观鸟爱好者，图片库的识别和整理一直是我的一大痛点，这个项目也算是圆了几年前的一个小梦想。
 
@@ -164,7 +164,7 @@ bash scripts/deploy.sh web
 
 ```
 ┌────────────────────────────────────────┐
-│     🪶 羽迹 FeatherTrace 一键部署       │
+│     🪶 飞羽志 WingScribe 一键部署       │
 ├────────────────────────────────────────┤
 │  [1] 🚀 开始部署                        │
 │  [2] ⚙️  配置选项                       │
@@ -178,13 +178,13 @@ bash scripts/deploy.sh web
 
 #### GitHub 国内访问
 
-脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/feather-trace），确保国内用户可以快速下载。
+脚本默认从 **Gitee 镜像** 克隆（https://gitee.com/jiangyuyi/wingscribe），确保国内用户可以快速下载。
 
 ---
 
 ### 🐳 Docker 部署
 
-FeatherTrace 支持 Docker 容器化部署，提供 CPU 和 GPU 两个版本。
+WingScribe 支持 Docker 容器化部署，提供 CPU 和 GPU 两个版本。
 
 #### Docker 一键启动
 
@@ -255,7 +255,7 @@ services:
 
 ### ☁️ 云平台配置
 
-FeatherTrace 支持多种云平台识别服务，无需本地 GPU 即可获得高质量识别结果。
+WingScribe 支持多种云平台识别服务，无需本地 GPU 即可获得高质量识别结果。
 
 #### 支持的云平台
 
@@ -322,11 +322,11 @@ curl -X POST http://localhost:8000/api/recognition/batch \
 
 ### 🔧 分离部署架构
 
-对于大规模部署场景，FeatherTrace 支持将 Web 服务和识别服务分离部署：
+对于大规模部署场景，WingScribe 支持将 Web 服务和识别服务分离部署：
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    本地 FeatherTrace                  │
+│                    本地 WingScribe                  │
 │  ┌─────────────┐  ┌────────────────────────────┐   │
 │  │  Web UI     │  │  Pipeline                  │   │
 │  │  :8000      │  │  YOLO Detection            │   │
@@ -440,7 +440,7 @@ python scripts/download_model.py
 
 ### 2. 配置
 
-FeatherTrace 使用 YAML 进行配置。
+WingScribe 使用 YAML 进行配置。
 
 1. **主设置**: 编辑 `config/settings.yaml` 来定义您的照片源路径和输出结构。
 2. **密钥**: 如果使用云端 API，请编辑 `config/secrets.yaml` 填入您的 API Key：
