@@ -340,17 +340,19 @@ function Install-Git {
     Log-Step "Installing Git..."
     if (Test-Command "winget") {
         Log-Info "Using winget..."
-        winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Log-Success "Git installed"; return $true }
+        Log-Info "Downloading... (this may take a few minutes)"
+
+        $process = Start-Process -FilePath "winget" -ArgumentList "install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements" -NoNewWindow -Wait -PassThru
+        if ($process.ExitCode -eq 0) { Log-Success "Git installed (restart terminal)"; return $true }
     }
     if (Test-Command "scoop") {
         Log-Info "Using scoop..."
-        scoop install git 2>&1 | Out-Null
+        scoop install git
         if ($LASTEXITCODE -eq 0) { Log-Success "Git installed"; return $true }
     }
     if (Test-Command "choco") {
         Log-Info "Using choco..."
-        choco install git -y 2>&1 | Out-Null
+        choco install git -y
         if ($LASTEXITCODE -eq 0) { Log-Success "Git installed"; return $true }
     }
     Log-Error "Cannot install Git automatically. Download: https://git-scm.com/download/win"
@@ -360,15 +362,20 @@ function Install-Git {
 function Install-Python {
     Log-Step "Installing Python 3.11..."
     if (Test-Command "winget") {
-        winget install --id Python.Python.3.11 -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Log-Success "Python installed (restart terminal)"; return $true }
+        Log-Info "Using winget..."
+        Log-Info "Downloading... (this may take a few minutes)"
+
+        $process = Start-Process -FilePath "winget" -ArgumentList "install --id Python.Python.3.11 -e --source winget --accept-package-agreements --accept-source-agreements" -NoNewWindow -Wait -PassThru
+        if ($process.ExitCode -eq 0) { Log-Success "Python installed (restart terminal)"; return $true }
     }
     if (Test-Command "scoop") {
-        scoop install python311 2>&1 | Out-Null
+        Log-Info "Using scoop..."
+        scoop install python311
         if ($LASTEXITCODE -eq 0) { Log-Success "Python installed"; return $true }
     }
     if (Test-Command "choco") {
-        choco install python311 -y 2>&1 | Out-Null
+        Log-Info "Using choco..."
+        choco install python311 -y
         if ($LASTEXITCODE -eq 0) { Log-Success "Python installed"; return $true }
     }
     Log-Error "Cannot install Python automatically. Download: https://www.python.org/downloads/"
@@ -378,26 +385,23 @@ function Install-Python {
 function Install-ExifTool {
     Log-Step "Installing ExifTool..."
 
-    # 使用 winget 安装
+    # 使用 winget 安装（直接运行，显示下载进度）
     if (Test-Command "winget") {
         Log-Info "Installing via winget (OliverBetz.ExifTool)..."
+        Log-Info "Downloading... (this may take a few minutes)"
 
-        # 静默安装，抑制所有输出（避免乱码）
-        $installResult = & winget install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        $exitCode = $LASTEXITCODE
-
-        if ($exitCode -eq 0) {
-            Log-Success "Winget installation completed"
+        # 直接运行 winget，让它显示自己的进度条
+        $process = Start-Process -FilePath "winget" -ArgumentList "install --id OliverBetz.ExifTool -e --source winget --accept-package-agreements --accept-source-agreements" -NoNewWindow -Wait -PassThru
+        $exitCode = $process.ExitCode
 
         if ($exitCode -eq 0) {
             Log-Success "Winget installation completed"
 
             # 等待安装完成
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 3
 
             # 刷新 PATH
             $env:PATH = [Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [Environment]::GetEnvironmentVariable("PATH", "User")
-            Log-Info "PATH refreshed"
 
             # 直接测试 exiftool 命令
             try {
@@ -407,7 +411,7 @@ function Install-ExifTool {
                     return $true
                 }
             } catch {
-                Log-Warn "exiftool -ver failed: $_"
+                Log-Warn "exiftool -ver failed, trying to find..."
             }
 
             # 尝试手动查找
@@ -431,17 +435,17 @@ function Install-ExifTool {
 
             Log-Warn "ExifTool installed but verification failed"
             Log-Info "Please restart terminal and run 'exiftool -ver' to verify"
+            return $true
         }
         else {
             Log-Warn "Winget install failed (exit code: $exitCode)"
-            Log-Info $outputText
         }
     }
 
     # 尝试 scoop
     if (Test-Command "scoop") {
         Log-Info "Trying scoop..."
-        $null = scoop install exiftool 2>&1
+        $null = scoop install exiftool
         if ($LASTEXITCODE -eq 0) {
             Log-Success "ExifTool installed via scoop"
             return $true
@@ -451,7 +455,7 @@ function Install-ExifTool {
     # 尝试 choco
     if (Test-Command "choco") {
         Log-Info "Trying choco..."
-        $null = choco install exiftool -y 2>&1
+        $null = choco install exiftool -y
         if ($LASTEXITCODE -eq 0) {
             Log-Success "ExifTool installed via choco"
             return $true
