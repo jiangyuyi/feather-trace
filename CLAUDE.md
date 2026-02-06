@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FeatherTrace (羽迹) is an automated bird photography management system that uses computer vision (YOLOv8) and multimodal AI models (BioCLIP) to automatically detect, filter, identify species, inject metadata, and organize bird photos into a hierarchical archive with a local web interface for manual verification.
+WingScribe (羽迹) is an automated bird photography management system that uses computer vision (YOLOv8) and multimodal AI models (BioCLIP) to automatically detect, filter, identify species, inject metadata, and organize bird photos into a hierarchical archive with a local web interface for manual verification.
 
 **Technology Stack:** Python 3.10+, PyTorch, YOLOv8, BioCLIP (OpenCLIP), FastAPI, SQLite, ExifTool
 
@@ -67,7 +67,7 @@ python scripts/check_gpu.py
 
 ### Core Pipeline (`src/pipeline_runner.py`)
 
-The `FeatherTracePipeline` class orchestrates the entire ETL process:
+The `WingScribePipeline` class orchestrates the entire ETL process:
 
 1. **Smart Scanning**: Uses `SmartScanner` to walk directories with date-based pruning to skip irrelevant folders
 2. **Detection**: `BirdDetector` (YOLOv8) finds birds in images
