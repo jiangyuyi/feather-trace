@@ -10,71 +10,30 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "${SCRIPT_DIR}")" && pwd)"
 
-# 检测是否支持颜色
-detect_color_support() {
-    # 如果用户明确要求禁用颜色
-    if [ -n "$NO_COLOR" ] || [ "$TERM" = "dumb" ]; then
-        return 1
-    fi
-
-    # 检查终端类型
-    case "$TERM" in
-        xterm*|xterm-color|linux|screen|screen-256color|vt100|ansi|cygwin|msys)
-            return 0
-            ;;
-    esac
-
-    # 检查是否在交互式终端中运行
-    if [ -t 1 ]; then
-        return 0
-    fi
-
-    return 1
-}
-
-# 启用或禁用颜色
-if detect_color_support; then
-    # 颜色定义
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    CYAN='\033[0;36m'
-    WHITE='\033[1;37m'
-    GRAY='\033[0;90m'
-    NC='\033[0m'
-else
-    # 禁用颜色
-    RED=''
-    GREEN=''
-    YELLOW=''
-    BLUE=''
-    CYAN=''
-    WHITE=''
-    GRAY=''
-    NC=''
-fi
-
 # 配置变量
 GITEE_MIRROR="https://gitee.com/jiangyuyi/wingscribe.git"
 GITHUB_ORIGIN="https://github.com/jiangyuyi/wingscribe.git"
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 HF_MIRROR="https://hf-mirror.com"
-PROXY=""
-PYTHON_CMD=""
-HAS_GPU=false
-DEVICE="auto"
 
-#===============================================================================
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+GRAY='\033[0;90m'
+NC='\033[0m'
+
+# 日志函数
+log_info()   { printf "${GREEN}[INFO]${NC}   %s\n" "$1"; }
+log_warn()   { printf "${YELLOW}[WARN]${NC]   %s\n" "$1"; }
+log_error()  { printf "${RED}[ERROR]${NC]  %s\n" "$1" >&2; }
+log_step()   { printf "${CYAN}[STEP]${NC]   %s\n" "$1"; }
+log_success(){ printf "${GREEN}[OK]${NC]    %s\n" "$1"; }
+
 # 工具函数
-#===============================================================================
-
-log_info()   { printf "${GREEN}[INFO]${NC} %s\n" "$1"; }
-log_warn()   { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
-log_error()  { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; }
-log_step()   { printf "${CYAN}[STEP]${NC} %s\n" "$1"; }
-log_success(){ printf "${GREEN}[OK]${NC} %s\n" "$1"; }
-
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
@@ -100,8 +59,6 @@ pause() {
 ask_input() {
     local prompt="$1"
     local default="${2:-}"
-    local result
-
     if [ -n "$default" ]; then
         printf "${CYAN}%s${NC} [%s]: " "$prompt" "$default"
         read -r result
@@ -116,7 +73,6 @@ ask_input() {
 ask_yes_no() {
     local prompt="$1"
     local default="${2:-y}"
-
     while true; do
         local answer
         local suffix
@@ -127,15 +83,20 @@ ask_yes_no() {
         fi
         printf "${CYAN}%s ${suffix}: " "$prompt"
         read -r answer
-
         answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
         [ -z "$answer" ] && answer="$default"
-
         case "$answer" in
             y|yes) return 0 ;;
             n|no)  return 1 ;;
         esac
     done
+}
+
+ensure_directory() {
+    local path="$1"
+    if [ ! -d "$path" ]; then
+        mkdir -p "$path" 2>/dev/null
+    fi
 }
 
 #===============================================================================
@@ -153,12 +114,11 @@ test_git() {
 }
 
 test_python() {
-    for cmd in python3 python; do
+    for cmd in python3.11 python3 python; do
         if command_exists "$cmd"; then
             local version=$($cmd --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
             local major=$($cmd -c "import sys; print(sys.version_info.major)" 2>/dev/null)
             local minor=$($cmd -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
-
             if [ "$major" = "3" ] && [ "$minor" -ge 8 ]; then
                 log_info "Python installed: $version ($cmd)"
                 PYTHON_CMD="$cmd"
@@ -195,48 +155,32 @@ test_gpu() {
 }
 
 test_cuda() {
-    local cuda_version=""
-    local cudnn_version=""
-    local driver_version=""
+    CUDA_STATUS="CUDA not detected"
+    CUDA_VERSION=""
+    DRIVER_VERSION=""
 
-    # 检测驱动
+    # 检测 NVIDIA 驱动
     if command_exists nvidia-smi; then
-        driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
-        log_info "NVIDIA Driver: $driver_version"
+        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+        log_info "NVIDIA Driver: $DRIVER_VERSION"
     fi
 
     # 检测 CUDA (nvcc)
     if command_exists nvcc; then
-        cuda_version=$(nvcc --version 2>/dev/null | grep "release" | awk '{print $5}' | tr -d ',' | head -1)
-        log_info "CUDA Toolkit: $cuda_version"
+        CUDA_VERSION=$(nvcc --version 2>/dev/null | grep "release" | awk '{print $5}' | tr -d ',' | head -1)
+        CUDA_STATUS="CUDA $CUDA_VERSION ready"
+        log_info "CUDA Toolkit: $CUDA_VERSION"
+        return 0
     else
         log_warn "CUDA Toolkit (nvcc) not found"
     fi
 
-    # 检测 cuDNN
-    local cudnn_paths=(
-        "/usr/local/cuda/lib64/libcudnn*"
-        "/usr/lib/x86_64-linux-gnu/libcudnn*"
-        "/opt/cuda/lib64/libcudnn*"
-    )
-
-    for path in "${cudnn_paths[@]}"; do
-        if ls $path 1>/dev/null 2>&1; then
-            cudnn_version="Installed"
-            log_info "cuDNN found"
-            break
-        fi
-    done
-
-    if [ -n "$cuda_version" ]; then
-        return 0
-    fi
     return 1
 }
 
 get_cuda_info() {
     if test_cuda 2>/dev/null; then
-        echo "CUDA ready (Driver: $driver_version)"
+        echo "$CUDA_STATUS (Driver: $DRIVER_VERSION)"
     else
         echo "Not installed (CPU mode recommended)"
     fi
@@ -246,13 +190,20 @@ get_cuda_info() {
 # 安装函数
 #===============================================================================
 
+install_apt_package() {
+    local package="$1"
+    log_info "Installing $package..."
+    sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
+    sudo apt-get install -y "$package" 2>&1 | grep -v "^Selecting" | grep -v "^Preparing" | head -10
+}
+
 install_git() {
     log_step "Installing Git..."
     if is_macos && command_exists brew; then
+        log_info "Using brew..."
         brew install git
     elif command_exists apt-get; then
-        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
-        sudo apt-get install -y git
+        install_apt_package "git"
     elif command_exists yum; then
         sudo yum install -y git
     elif command_exists dnf; then
@@ -274,13 +225,11 @@ install_python() {
     elif command_exists apt-get; then
         # 先安装 python3-venv（解决虚拟环境创建问题）
         log_info "Installing Python and python3-venv..."
-        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
-        sudo apt-get install -y python3.11 python3.11-venv python3-pip
+        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
+        sudo apt-get install -y python3.11 python3.11-venv python3-pip 2>&1 | grep -v "^Selecting" | head -10
     elif command_exists yum; then
-        log_info "Using yum..."
         sudo yum install -y python3
     elif command_exists dnf; then
-        log_info "Using dnf..."
         sudo dnf install -y python3
     else
         log_error "Cannot install Python automatically"
@@ -297,8 +246,7 @@ install_exiftool() {
     if is_macos && command_exists brew; then
         brew install exiftool
     elif command_exists apt-get; then
-        sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -5 || true
-        sudo apt-get install -y exiftool
+        install_apt_package "perl-image-exiftool"
     elif command_exists yum; then
         sudo yum install -y perl-Image-ExifTool
     elif command_exists dnf; then
@@ -311,6 +259,21 @@ install_exiftool() {
     test_exiftool
 }
 
+install_venv_if_needed() {
+    # 检查 venv 模块是否存在
+    if ! python3.11 -c "import venv" 2>/dev/null; then
+        log_info "Installing python3-venv..."
+        if command_exists apt-get; then
+            sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
+            sudo apt-get install -y python3.11-venv 2>&1 | grep -v "^Selecting" | head -5
+        elif command_exists yum; then
+            sudo yum install -y python3-venv
+        elif command_exists dnf; then
+            sudo dnf install -y python3-venv
+        fi
+    fi
+}
+
 install_python_deps() {
     log_step "Installing Python dependencies..."
 
@@ -321,30 +284,6 @@ install_python_deps() {
 
     local venv_path="${PROJECT_ROOT}/venv"
     local pip_cmd=""
-
-    # 检查是否需要安装 python3-venv（Debian/Ubuntu 问题）
-    check_venv_support() {
-        if ! command_exists python3.11; then
-            return 1
-        fi
-        # 尝试检查 venv 模块是否存在
-        python3.11 -c "import venv" 2>/dev/null
-        return $?
-    }
-
-    install_venv_if_needed() {
-        if ! check_venv_support; then
-            log_info "Installing python3-venv..."
-            if command_exists apt-get; then
-                sudo apt-get update 2>&1 | grep -v "^Hit" | grep -v "^Reading" | head -3 || true
-                sudo apt-get install -y python3.11-venv
-            elif command_exists yum; then
-                sudo yum install -y python3-venv
-            elif command_exists dnf; then
-                sudo dnf install -y python3-venv
-            fi
-        fi
-    }
 
     # 创建虚拟环境前确保 venv 支持
     if [ ! -d "$venv_path" ]; then
@@ -366,21 +305,17 @@ install_python_deps() {
     fi
 
     # 确定 pip 命令
-    if is_windows; then
-        pip_cmd="${venv_path}/Scripts/pip.exe"
-    else
-        pip_cmd="${venv_path}/bin/pip"
-    fi
+    pip_cmd="${venv_path}/bin/pip"
 
     # 配置 pip 镜像
     log_info "Configuring pip mirror..."
     $pip_cmd config set global.index-url "$PIP_MIRROR" 2>/dev/null || true
 
-    # 升级 pip（显示进度）
+    # 升级 pip
     log_info "Upgrading pip..."
     $pip_cmd install --upgrade pip 2>&1 | grep -v "Requirement already" || true
 
-    # 安装依赖（显示进度）
+    # 安装依赖
     local requirements="${PROJECT_ROOT}/requirements.txt"
     if [ -f "$requirements" ]; then
         log_info "Installing requirements.txt..."
@@ -510,39 +445,93 @@ get_project() {
         fi
     fi
 
-    # 检查是否有项目文件
-    if [ -f "${PROJECT_ROOT}/settings.yaml" ]; then
+    # 检查是否有项目文件（必须有 src/ 目录和 requirements.txt）
+    if [ -f "${PROJECT_ROOT}/settings.yaml" ] || [ -f "${PROJECT_ROOT}/settings.yaml" ]; then
         log_success "Project files found"
         return 0
     fi
 
-    # 检查目录是否非空
+    # 检查 src/ 目录
+    if [ -d "${PROJECT_ROOT}/src" ] && [ -f "${PROJECT_ROOT}/requirements.txt" ]; then
+        log_success "Project files found"
+        return 0
+    fi
+
+    # 检查目录是否非空（排除脚本文件）
     local items=$(ls -A "$PROJECT_ROOT" 2>/dev/null | grep -v ".git" | grep -v "deploy.sh" | grep -v "deploy.ps1")
     if [ -n "$items" ]; then
-        log_warn "Directory not empty, using existing files"
-        return 0
+        log_warn "Found existing files but no project detected"
+
+        # 备份用户文件
+        local backupDir="${HOME}/wingscribe_backup_$(date +%Y%m%d_%H%M%S)"
+        log_info "Backing up your files to: $backupDir"
+
+        mkdir -p "$backupDir"
+        for item in $items; do
+            [ "$item" != ".git" ] && [ "$item" != "deploy.sh" ] && [ "$item" != "deploy.ps1" ] && \
+            [ "$item" != "deploy.ps1.bin" ] && cp -r "$item" "$backupDir/" 2>/dev/null
+        done
+        log_success "Backup complete"
     fi
 
-    # 从 Gitee 克隆
+    # 优先从 Gitee 克隆
     log_info "Cloning from Gitee..."
-    if git clone --depth 1 "$GITEE_MIRROR" "$PROJECT_ROOT" 2>/dev/null; then
-        log_success "Cloned from Gitee"
-        
-        # 自动改回 GitHub
-        log_info "Setting remote to GitHub..."
-        git -C "$PROJECT_ROOT" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
-        
+    local cloneSuccess=false
+    local lastError=""
+
+    local tempDir="/tmp/wingscribe_clone_$$"
+    mkdir -p "$tempDir"
+
+    if git clone --depth 1 "$GITEE_MIRROR" "$tempDir" 2>&1; then
+        if [ -f "${tempDir}/requirements.txt" ]; then
+            # 自动改回 GitHub
+            git -C "$tempDir" remote set-url origin "$GITHUB_ORIGIN" 2>/dev/null
+            cloneSuccess=true
+            log_success "Cloned from Gitee"
+        fi
+    else
+        lastError=$(git clone --depth 1 "$GITEE_MIRROR" "$tempDir" 2>&1)
+    fi
+
+    # 尝试 GitHub
+    if [ "$cloneSuccess" = false ]; then
+        log_warn "Gitee clone failed, trying GitHub..."
+        if git clone --depth 1 "$GITHUB_ORIGIN" "$tempDir" 2>&1; then
+            if [ -f "${tempDir}/requirements.txt" ]; then
+                cloneSuccess=true
+                log_success "Cloned from GitHub"
+            fi
+        else
+            lastError=$(git clone --depth 1 "$GITHUB_ORIGIN" "$tempDir" 2>&1)
+        fi
+    fi
+
+    if [ "$cloneSuccess" = true ]; then
+        log_info "Moving files to project directory..."
+
+        # 移动文件到目标目录
+        for item in "${tempDir}"/*; do
+            local basename=$(basename "$item")
+            [ "$basename" != ".git" ] && cp -r "$item" "$PROJECT_ROOT/" 2>/dev/null
+        done
+
+        # 清理临时目录
+        rm -rf "$tempDir"
+
+        log_success "Project cloned successfully"
         return 0
     fi
 
-    # 从 GitHub 克隆
-    log_info "Trying GitHub..."
-    if git clone --depth 1 "$GITHUB_ORIGIN" "$PROJECT_ROOT" 2>/dev/null; then
-        log_success "Cloned from GitHub"
-        return 0
-    fi
+    # Clone 失败
+    log_error "Clone failed!"
+    log_error "Details: $lastError"
+    echo ""
+    echo -e "${YELLOW}Possible solutions:${NC}"
+    echo -e "  1. Check internet connection"
+    echo -e "  2. Install Git: https://npm.taobao.org/mirrors/git-for-windows"
+    echo -e "  3. Or manually clone the repository to this folder"
+    echo ""
 
-    log_error "Clone failed"
     return 1
 }
 
@@ -584,7 +573,7 @@ invoke_config_wizard() {
     # 2. 输出目录
     echo -e "  ${CYAN}2/3 Output directory${NC}"
     local output_dir=$(ask_input "Output directory" "${PROJECT_ROOT}/data/processed")
-    mkdir -p "$output_dir" 2>/dev/null
+    ensure_directory "$output_dir"
 
     echo ""
 
@@ -622,7 +611,7 @@ invoke_config_wizard() {
 
     # 生成 settings.yaml
     local config_path="${PROJECT_ROOT}/config/settings.yaml"
-    mkdir -p "$(dirname "$config_path")"
+    ensure_directory "$(dirname "$config_path")"
 
     cat > "$config_path" << EOF
 # WingScribe config
@@ -695,20 +684,15 @@ EOF
 start_web_server() {
     log_step "Starting Web server..."
 
-    local venv_python=""
-    if is_windows; then
-        venv_python="${PROJECT_ROOT}/venv/Scripts/python.exe"
-    else
-        venv_python="${PROJECT_ROOT}/venv/bin/python"
-    fi
+    local venv_python="${PROJECT_ROOT}/venv/bin/python"
+    local web_script="${PROJECT_ROOT}/src/web/app.py"
 
     if [ ! -f "$venv_python" ]; then
         log_error "Virtual environment not found!"
-        log_info "Please run '$0 install' first"
+        log_info "Please run '$0 deploy' first"
         return 1
     fi
 
-    local web_script="${PROJECT_ROOT}/src/web/app.py"
     if [ ! -f "$web_script" ]; then
         log_error "Web script not found: $web_script"
         return 1
@@ -740,24 +724,6 @@ test_docker() {
     return 1
 }
 
-install_docker() {
-    log_step "Installing Docker..."
-    if is_linux; then
-        curl -fsSL https://get.docker.com -o get-docker.sh
-        sudo sh get-docker.sh
-        sudo usermod -aG docker $USER
-    elif is_macos && command_exists brew; then
-        brew install --cask docker
-    elif is_windows && command_exists winget; then
-        winget install --id Docker.DockerDesktop -e --source winget
-    else
-        log_error "Cannot install Docker automatically"
-        log_info "Download: https://www.docker.com/get-started"
-        return 1
-    fi
-    test_docker
-}
-
 start_docker_local() {
     log_step "Starting Docker (local mode)..."
 
@@ -780,170 +746,6 @@ start_docker_local() {
     echo ""
     echo -e "${GREEN}Web UI: http://localhost:8000${NC}"
     echo -e "${GREEN}Recognition API: http://localhost:8000/api/recognition${NC}"
-}
-
-start_docker_cpu() {
-    log_step "Starting CPU recognition service..."
-
-    if ! test_docker; then
-        log_error "Docker not found"
-        return 1
-    fi
-
-    cd "$PROJECT_ROOT"
-    docker compose -f docker-compose.remote.yml up -d recognition-cpu
-
-    echo ""
-    echo -e "${GREEN}Recognition Service (CPU): http://localhost:8080${NC}"
-}
-
-start_docker_gpu() {
-    log_step "Starting GPU recognition service..."
-
-    if ! test_docker; then
-        log_error "Docker not found"
-        return 1
-    fi
-
-    if ! test_gpu; then
-        log_error "No GPU detected"
-        return 1
-    fi
-
-    cd "$PROJECT_ROOT"
-    docker compose -f docker-compose.remote.yml up -d recognition-gpu
-
-    echo ""
-    echo -e "${GREEN}Recognition Service (GPU): http://localhost:8081${NC}"
-}
-
-start_docker_all() {
-    log_step "Starting full Docker stack..."
-
-    if ! test_docker; then
-        log_error "Docker not found"
-        return 1
-    fi
-
-    cd "$PROJECT_ROOT"
-    docker compose -f docker-compose.yml -f docker-compose.remote.yml up -d
-
-    echo ""
-    echo -e "${GREEN}Web UI: http://localhost:8000${NC}"
-    echo -e "${GREEN}Recognition API (CPU): http://localhost:8080${NC}"
-    echo -e "${GREEN}Recognition API (GPU): http://localhost:8081${NC}"
-    echo -e "${GREEN}Redis (queue): localhost:6379${NC}"
-}
-
-#===============================================================================
-# Cloud Platform Configuration
-#===============================================================================
-
-configure_cloud() {
-    log_step "Configuring cloud platforms..."
-    echo ""
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}  ${WHITE}Cloud Platform Configuration${NC}               ${CYAN}"
-    echo -e "${CYAN}========================================${NC}"
-    echo ""
-
-    local secrets_path="${PROJECT_ROOT}/config/secrets.yaml"
-
-    # 确保 secrets.yaml 存在
-    if [ ! -f "$secrets_path" ]; then
-        cat > "$secrets_path" << 'EOF'
-# WingScribe secrets
-# Cloud platform API keys
-
-# Local recognition (optional)
-local:
-  enabled: true
-
-# Cloud platforms
-cloud:
-  huggingface:
-    api_token: ${HF_TOKEN}
-    model_id: hf-hub:imageomics/bioclip
-
-  modelscope:
-    api_token: ${MODELSCOPE_TOKEN}
-    model_id: damo/cv_resnet50_image-classification_birds
-
-  aliyun:
-    access_key_id: ${ALIYUN_ACCESS_KEY_ID}
-    access_key_secret: ${ALIYUN_ACCESS_KEY_SECRET}
-
-  baidu:
-    api_key: ${BAIDU_API_KEY}
-    secret_key: ${BAIDU_SECRET_KEY}
-
-# API authentication
-api_keys:
-  - name: default
-    key: ${WINGSCRIBE_API_KEY}
-    rate_limit: 1000/day
-    quota: 10000/month
-EOF
-        log_success "Created secrets template"
-    fi
-
-    echo -e "  ${WHITE}Cloud Platform API Keys${NC}"
-    echo ""
-    echo -e "  ${GREEN}HuggingFace:${NC}"
-    echo -e "    Set HF_TOKEN environment variable or edit $secrets_path"
-    echo -e "    Get token: https://huggingface.co/settings/tokens"
-    echo ""
-    echo -e "  ${GREEN}ModelScope:${NC}"
-    echo -e "    Set MODELSCOPE_TOKEN environment variable or edit $secrets_path"
-    echo -e "    Get token: https://modelscope.cn/my/settings/token"
-    echo ""
-    echo -e "  ${GREEN}Aliyun:${NC}"
-    echo -e "    Configure access_key_id and access_key_secret in secrets.yaml"
-    echo -e "    Get credentials: https://ram.console.aliyun.com/..."
-    echo ""
-    echo -e "  ${GREEN}Baidu:${NC}"
-    echo -e "    Configure api_key and secret_key in secrets.yaml"
-    echo -e "    Get credentials: https://ai.baidu.com/tech/imagerecognition"
-    echo ""
-
-    if ask_yes_no "Open configuration file for editing?" "n"; then
-        if command_exists nano; then
-            nano "$secrets_path"
-        elif command_exists vim; then
-            vim "$secrets_path"
-        else
-            log_info "Edit manually: $secrets_path"
-        fi
-    fi
-}
-
-list_cloud_platforms() {
-    log_step "Available cloud platforms..."
-    echo ""
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}  ${WHITE}Cloud Platforms${NC}                             ${CYAN}"
-    echo -e "${CYAN}========================================${NC}"
-    echo ""
-    echo -e "  ${GREEN}1. HuggingFace${NC}"
-    echo -e "     Status: $([ -n "$HF_TOKEN" ] && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
-    echo -e "     Models: microsoft/BioCLIP, hf-hub:imageomics/bioclip"
-    echo -e "     URL: https://huggingface.co/"
-    echo ""
-    echo -e "  ${GREEN}2. ModelScope (魔搭)${NC}"
-    echo -e "     Status: $([ -n "$MODELSCOPE_TOKEN" ] && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
-    echo -e "     Models: damo/cv_resnet50_image-classification_birds"
-    echo -e "     URL: https://modelscope.cn/"
-    echo ""
-    echo -e "  ${GREEN}3. Aliyun (阿里云)${NC}"
-    echo -e "     Status: $([ -f "${PROJECT_ROOT}/config/secrets.yaml" ] && grep -q "access_key_id" "${PROJECT_ROOT}/config/secrets.yaml" && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
-    echo -e "     Service: 图像标签识别"
-    echo -e "     URL: https://www.aliyun.com/product/imagerecog"
-    echo ""
-    echo -e "  ${GREEN}4. Baidu (百度云)${NC}"
-    echo -e "     Status: $([ -f "${PROJECT_ROOT}/config/secrets.yaml" ] && grep -q "api_key" "${PROJECT_ROOT}/config/secrets.yaml" && echo "${GREEN}Configured${NC}" || echo "${YELLOW}Not configured${NC}")"
-    echo -e "     Service: 图像识别"
-    echo -e "     URL: https://ai.baidu.com/tech/imagerecognition"
-    echo ""
 }
 
 #===============================================================================
@@ -969,11 +771,6 @@ Commands:
   cuda             Install CUDA (GPU support)
   web              Start Web server
   docker:local     Start with Docker (local)
-  docker:cpu       Start CPU container only
-  docker:gpu       Start GPU container (requires GPU)
-  docker:all       Full Docker stack (local + recognition services)
-  cloud:config     Configure cloud platform API keys
-  cloud:list       List available cloud platforms
   help             Show this help
 
 Examples:
@@ -981,20 +778,12 @@ Examples:
   $0 config           # Configure only
   $0 web              # Start Web service
   $0 cuda             # Install CUDA
-  $0 docker:local     # Start with Docker
-  $0 cloud:config     # Configure cloud platforms
 
 Quick Start:
   1. Run: $0 deploy
   2. Configure photo directory
   3. Run: $0 web
   4. Open: http://localhost:8000
-
-Cloud Platforms:
-  - HuggingFace: Use HF_TOKEN environment variable
-  - ModelScope: Use MODELSCOPE_TOKEN environment variable
-  - Aliyun: Configure access_key_id/secret in secrets.yaml
-  - Baidu: Configure api_key/secret_key in secrets.yaml
 
 EOF
 }
@@ -1033,11 +822,12 @@ main() {
                 if ask_yes_no "Install ExifTool?"; then install_exiftool; fi
             fi
 
-            log_step "3/4 Installing Python dependencies..."
+            log_step "3/4 Getting project..."
+            get_project
+
+            log_step "4/4 Installing Python dependencies..."
             install_python_deps
 
-            log_step "4/4 Configuring project..."
-            get_project
             invoke_config_wizard
 
             echo ""
@@ -1055,15 +845,14 @@ main() {
             echo -e "${CYAN}========================================${NC}"
             echo ""
 
-            test_git || true
-            test_python || true
-            test_exiftool || true
-
+            log_step "Installing system dependencies..."
             if ! command_exists git; then install_git || true; fi
             if ! test_python; then install_python || true; fi
             if ! command_exists exiftool; then install_exiftool || true; fi
 
+            log_step "Installing Python dependencies..."
             install_python_deps
+
             log_success "Dependencies installed"
             ;;
         config|c)
@@ -1090,21 +879,6 @@ main() {
             ;;
         docker:local|dl)
             start_docker_local
-            ;;
-        docker:cpu|dc)
-            start_docker_cpu
-            ;;
-        docker:gpu|dg)
-            start_docker_gpu
-            ;;
-        docker:all|da)
-            start_docker_all
-            ;;
-        cloud:config|cc)
-            configure_cloud
-            ;;
-        cloud:list|cl)
-            list_cloud_platforms
             ;;
         help|-h|--help|"")
             show_help
