@@ -396,7 +396,6 @@ install_cuda_auto() {
     fi
 
     # 选择合适的下载链接
-    # CUDA 12.1 runfile (local) 下载地址
     local cuda_installer=""
     local download_url=""
 
@@ -441,22 +440,42 @@ install_cuda_auto() {
     log_info "Downloading CUDA Toolkit 12.1..."
     log_info "URL: $download_url"
 
-    # 下载 CUDA
+    # 下载 CUDA（使用 -L 跟随重定向，-f 失败时返回错误码）
     local installer_path="/tmp/${cuda_installer}"
-    if ! curl -L -o "$installer_path" "$download_url" 2>&1 | grep -v "^  %"; then
+
+    # 使用 curl 下载，跟随重定向
+    local curl_output
+    curl_output=$(curl -L -f -o "$installer_path" "$download_url" 2>&1)
+    local curl_status=$?
+
+    if [ $curl_status -ne 0 ] || [ ! -s "$installer_path" ]; then
         log_error "Failed to download CUDA"
+        log_error "curl output: $curl_output"
         log_info "Please download manually from:"
         log_info "  https://developer.nvidia.com/cuda-downloads"
         return 1
     fi
-    log_success "CUDA downloaded"
+
+    local file_size=$(stat -c%s "$installer_path" 2>/dev/null || stat -f%z "$installer_path" 2>/dev/null)
+    log_info "Downloaded: $file_size bytes"
+
+    # 验证下载的文件
+    local file_header=$(head -c 100 "$installer_path")
+    if [[ ! "$file_header" =~ ELF|Mach-O ]]; then
+        log_error "Downloaded file is not a valid executable"
+        log_error "File header: $file_header"
+        rm -f "$installer_path"
+        return 1
+    fi
+
+    log_success "CUDA installer verified"
 
     # 安装 CUDA（静默模式）
     log_info "Installing CUDA (this may take several minutes)..."
     chmod +x "$installer_path"
 
     # 静默安装，只安装 toolkit
-    if $installer_path --silent --toolkit --override 2>&1 | grep -v "^  %"; then
+    if $installer_path --silent --toolkit --override 2>&1; then
         log_success "CUDA installed successfully"
 
         # 添加到 PATH
