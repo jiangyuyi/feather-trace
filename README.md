@@ -58,34 +58,19 @@ WingScribe 是一个专为鸟类摄影师打造的自动化管理流水线。它
 
 ## 🚀 部署指南
 
-### ⚡ 一键部署脚本 (推荐)
-
-我们提供了自动化部署脚本，支持 Windows/macOS/Linux，自动完成环境检测、依赖安装、配置向导等步骤。
+### ⚡ 一行命令快速部署
 
 #### Windows 用户
 
-**方法 1: 右键运行 (推荐)**
-1. 下载 `scripts/deploy.ps1.bin`
-2. 右键点击 `deploy.ps1.bin`
-3. 选择 "以 PowerShell 运行"
-
-**方法 2: 一行命令运行**
 ```powershell
 # 国内用户（Gitee，无需梯子）：
-Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1.bin; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1.bin
+Invoke-WebRequest -Uri "https://gitee.com/jiangyuyi/wingscribe/raw/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1
 
 # 海外用户：
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1.bin; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1.bin
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts/deploy.ps1.bin" -OutFile deploy.ps1; powershell.exe -ExecutionPolicy Bypass -File deploy.ps1
 ```
 
-**方法 3: PowerShell 终端运行**
-```powershell
-# 进入项目目录
-cd feather_trace
-
-# 运行部署脚本
-.\scripts\deploy.ps1.bin
-```
+> **说明**: Windows 默认禁止运行 PowerShell 脚本。上述命令会自动设置执行策略并运行一键部署。
 
 #### Linux / macOS / WSL 用户
 
@@ -98,8 +83,6 @@ curl -fsSL https://raw.githubusercontent.com/jiangyuyi/wingscribe/master/scripts
 ```
 
 > **说明**: Gitee 为国内镜像站，下载速度更快且无需翻墙工具；GitHub 为官方仓库，版本更新更及时。
-
-> **说明**: Windows 默认禁止运行 PowerShell 脚本，需要设置执行策略。右键运行或使用 `powershell.exe -ExecutionPolicy Bypass` 可绕过此限制。
 
 #### 可用命令
 
