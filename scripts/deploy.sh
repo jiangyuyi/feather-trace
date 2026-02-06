@@ -532,8 +532,8 @@ install_cuda() {
                 echo "HAS_GPU=$HAS_GPU" > "$gpu_status_file"
                 echo "GPU_INFO=$gpu_info" >> "$gpu_status_file"
 
-                # 使用 sudo 运行 CUDA 安装，传递状态文件路径
-                exec sudo HAS_GPU_STATUS_FILE="$gpu_status_file" bash "$0" cuda_install "$gpu_info"
+                # 使用 sudo 运行 CUDA 安装，使用绝对路径
+                exec sudo HAS_GPU_STATUS_FILE="$gpu_status_file" bash "$SCRIPT_DIR/deploy.sh" cuda_install "$gpu_info"
                 return 0
             fi
 
